@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Precarga SHAT{% endblock %}</title>
+<link rel="stylesheet" href="/static/css/app.css">
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+
+<!-- Overlay para cerrar sidebar en móvil -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+<!-- Topbar móvil -->
+<div class="mobile-topbar">
+  <button class="hamburger" onclick="toggleSidebar()">☰</button>
+  <span class="title">🛢 Precarga SHAT</span>
+  {% if user %}
+  <a href="/logout" style="color:var(--muted);font-size:12px;text-decoration:none">Salir</a>
+  {% endif %}
+</div>
+
+<div class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <div class="title">🛢 Precarga SHAT</div>
+    <div class="version">v0.3 · Web</div>
+  </div>
+
+  <nav style="padding-top:8px">
+    <a class="nav-item {% if page=='dashboard' %}active{% endif %}" href="/" onclick="closeSidebar()"><span class="nav-icon">🏠</span>Dashboard</a>
+    <a class="nav-item {% if page=='procesar' %}active{% endif %}" href="/procesar" onclick="closeSidebar()"><span class="nav-icon">📄</span>Procesar PDFs</a>
+    <a class="nav-item {% if page=='altas' %}active{% endif %}" href="/altas" onclick="closeSidebar()"><span class="nav-icon">⬆️</span>Altas</a>
+    <a class="nav-item {% if page=='bajas' %}active{% endif %}" href="/bajas" onclick="closeSidebar()"><span class="nav-icon">⬇️</span>Bajas</a>
+    <a class="nav-item {% if page=='companias' %}active{% endif %}" href="/companias" onclick="closeSidebar()"><span class="nav-icon">🏢</span>Compañías</a>
+    <a class="nav-item {% if page=='activos' %}active{% endif %}" href="/activos" onclick="closeSidebar()"><span class="nav-icon">🗃️</span>Activos</a>
+    <a class="nav-item {% if page=='logs' %}active{% endif %}" href="/logs" onclick="closeSidebar()"><span class="nav-icon">📊</span>Logs</a>
+    {% if user and user.rol == 'admin' %}
+    <div style="border-top:1px solid var(--border);margin:8px 0"></div>
+    <a class="nav-item {% if page=='admin' %}active{% endif %}" href="/admin/usuarios" onclick="closeSidebar()"><span class="nav-icon">👥</span>Usuarios</a>
+    {% endif %}
+  </nav>
+
+  <div class="sidebar-footer">
+    {% if user %}
+    <div style="margin-bottom:8px">
+      <div style="color:var(--text);font-size:12px;font-weight:600">{{ user.username }}</div>
+      <div style="color:var(--muted);font-size:11px;margin-top:2px">
+        {% set dias = dias_restantes(user) %}
+        {% if dias > 10 %}
+          <span style="color:var(--green)">● {{ dias }} días restantes</span>
+        {% elif dias > 3 %}
+          <span style="color:var(--amber)">● {{ dias }} días restantes</span>
+        {% else %}
+          <span style="color:var(--red)">● {{ dias }} días restantes</span>
+        {% endif %}
+      </div>
+    </div>
+    <a href="/logout" class="btn btn-ghost btn-sm" style="width:100%;justify-content:center">Cerrar sesión</a>
+    {% endif %}
+    <div style="color:var(--muted);font-size:11px;margin-top:8px">PEMEX · Logística Marina</div>
+  </div>
+</div>
+
+<main class="main">
+  <div id="toast-container"></div>
+  {% block content %}{% endblock %}
+</main>
+
+<script src="/static/js/app.js"></script>
+<script>
+function toggleSidebar() {
+  document.getElementById("sidebar").classList.toggle("open");
+  document.getElementById("sidebar-overlay").classList.toggle("open");
+}
+function closeSidebar() {
+  document.getElementById("sidebar").classList.remove("open");
+  document.getElementById("sidebar-overlay").classList.remove("open");
+}
+// Cerrar con Escape
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeSidebar(); });
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

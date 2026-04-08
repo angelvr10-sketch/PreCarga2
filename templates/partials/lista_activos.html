@@ -1,0 +1,15 @@
+<div id="lista-activos" style="display:flex;flex-direction:column;gap:4px;max-height:500px;overflow-y:auto">
+{% for a in activos %}
+<div class="sol-row" data-activo="{{ a }}">
+  <div style="flex:1;font-size:13px">{{ a }}</div>
+  <button class="btn btn-danger btn-sm"
+          hx-post="/htmx/activos/eliminar"
+          hx-vals='{"activo": "{{ a }}"}'
+          hx-target="#lista-activos"
+          hx-swap="outerHTML"
+          hx-confirm="¿Eliminar este activo?">✕</button>
+</div>
+{% else %}
+<p style="color:var(--muted);text-align:center;padding:20px">Sin activos registrados</p>
+{% endfor %}
+</div>

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Altas · Precarga SHAT{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>⬆️ Altas — Personal que sube</h1>
+  <p>Selecciona solicitudes para generar la plantilla de entradas</p>
+</div>
+
+<div class="card">
+  <form id="form-altas">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div class="card-title" style="margin:0">Solicitudes disponibles</div>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="selectAll('solicitudes',true)">Seleccionar todo</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="selectAll('solicitudes',false)">Ninguno</button>
+      </div>
+    </div>
+
+    {% if solicitudes %}
+    <div style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+      {% for s in solicitudes %}
+      <label class="sol-row" style="cursor:pointer">
+        <input type="checkbox" name="solicitudes" value="{{ s.nombre }}">
+        <div class="sol-info">
+          <div class="sol-name">{{ s.nombre }}</div>
+          <div class="sol-sub">
+            {{ s.compania or '—' }}
+            {% if s.fecha %} · Llegada: {{ s.fecha }}{% endif %}
+          </div>
+        </div>
+        <span class="badge badge-blue">{{ s.n }} persona{{ 's' if s.n != 1 else '' }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:var(--muted);text-align:center;padding:24px">No hay solicitudes procesadas en /solicitudes</p>
+    {% endif %}
+
+    {% if solicitudes %}
+    <hr class="divider">
+    <button type="button" class="btn btn-success" onclick="generarEntradas('form-altas')">
+      📋 Generar plantilla de entradas
+    </button>
+    {% endif %}
+  </form>
+</div>
+
+{% endblock %}

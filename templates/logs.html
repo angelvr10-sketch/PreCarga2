@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Logs · Precarga SHAT{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>📊 Logs del sistema</h1>
+  <p>Registro de operaciones del día</p>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div class="card-title" style="margin:0">{{ fecha }}</div>
+    <a href="/api/descargar-log" class="btn btn-ghost btn-sm">⬇ Descargar</a>
+  </div>
+  <div class="log-box" style="height:500px;white-space:pre-wrap">{{ contenido }}</div>
+</div>
+
+{% endblock %}

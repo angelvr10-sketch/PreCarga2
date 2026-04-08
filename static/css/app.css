@@ -1,0 +1,237 @@
+/* static/css/app.css */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #1E1E2E;
+  --surface: #2A2A3E;
+  --surface2:#252538;
+  --border:  #3A3A5C;
+  --text:    #E2E2F0;
+  --muted:   #9090B0;
+  --blue:    #82AAFF;
+  --green:   #C3E88D;
+  --amber:   #FFCB6B;
+  --red:     #F07178;
+  --teal:    #89DDFF;
+  --radius:  10px;
+  --sidebar: 220px;
+}
+
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; font-size: 14px; }
+
+/* ── Sidebar ── */
+.sidebar {
+  position: fixed; left: 0; top: 0; bottom: 0; width: var(--sidebar);
+  background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; z-index: 100;
+}
+.sidebar-logo { padding: 20px 16px 12px; border-bottom: 1px solid var(--border); }
+.sidebar-logo .title { font-size: 15px; font-weight: 600; }
+.sidebar-logo .version { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+  color: var(--muted); font-size: 13px; cursor: pointer;
+  border-left: 3px solid transparent; text-decoration: none; transition: all .15s;
+}
+.nav-item:hover { background: #35355A; color: var(--text); }
+.nav-item.active { color: var(--blue); border-left-color: var(--blue); background: #1E1E3A; }
+.nav-icon { font-size: 16px; width: 20px; text-align: center; }
+.sidebar-footer { padding: 12px 16px; border-top: 1px solid var(--border); margin-top: auto; color: var(--muted); font-size: 11px; }
+
+/* ── Main ── */
+.main { margin-left: var(--sidebar); padding: 24px; min-height: 100vh; }
+.page-header { margin-bottom: 24px; }
+.page-header h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+.page-header p  { color: var(--muted); font-size: 13px; }
+
+/* ── Cards ── */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+.card-title { font-size: 14px; font-weight: 600; margin-bottom: 14px; }
+.card-sm { background: var(--surface2); border-radius: 8px; padding: 14px; }
+
+/* ── Stat cards ── */
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+.stat-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; }
+.stat-value { font-size: 28px; font-weight: 700; }
+.stat-label { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+/* ── Botones ── */
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; border: none; font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s; text-decoration: none; }
+.btn-primary  { background: var(--blue);  color: #1E1E2E; }
+.btn-primary:hover  { background: #5C88DD; }
+.btn-success  { background: #1D9E75; color: #fff; }
+.btn-success:hover  { background: #0F6E56; }
+.btn-danger   { background: transparent; color: var(--red);  border: 1px solid var(--red); }
+.btn-danger:hover   { background: #3a1a1a; }
+.btn-ghost    { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+.btn-ghost:hover    { background: var(--surface2); color: var(--text); }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ── Inputs ── */
+.input, .select, textarea {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; font-size: 13px; width: 100%;
+  transition: border-color .15s; outline: none; font-family: inherit;
+}
+.input:focus, .select:focus, textarea:focus { border-color: var(--blue); }
+.input::placeholder { color: var(--muted); }
+.select option { background: var(--surface); }
+.form-group { margin-bottom: 14px; }
+.form-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.form-row { display: flex; gap: 10px; align-items: flex-end; }
+.form-row .input { flex: 1; }
+
+/* ── Tabla ── */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+thead tr { border-bottom: 1px solid var(--border); }
+th { padding: 10px 12px; text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+td { padding: 10px 12px; border-bottom: 1px solid rgba(58,58,92,.4); }
+tr:hover td { background: var(--surface2); }
+tr:last-child td { border-bottom: none; }
+
+/* ── Badges ── */
+.badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.badge-blue   { background: #1a2a4a; color: var(--blue); }
+.badge-green  { background: #1a3a1a; color: var(--green); }
+.badge-amber  { background: #3a2a0a; color: var(--amber); }
+.badge-red    { background: #3a1a1a; color: var(--red); }
+
+/* ── Log ── */
+.log-box {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px; height: 220px; overflow-y: auto; font-family: Consolas, monospace;
+  font-size: 12px; line-height: 1.6;
+}
+.log-ok   { color: var(--green); }
+.log-err  { color: var(--red); }
+.log-info { color: var(--blue); }
+.log-warn { color: var(--amber); }
+
+/* ── Upload zone ── */
+.upload-zone {
+  border: 2px dashed var(--border); border-radius: 10px; background: var(--bg);
+  padding: 30px; text-align: center; cursor: pointer; transition: all .2s;
+}
+.upload-zone:hover, .upload-zone.drag { border-color: var(--blue); background: #1E1E3A; }
+.upload-zone p { color: var(--muted); font-size: 13px; margin-top: 8px; }
+
+/* ── Solicitud row ── */
+.sol-row {
+  display: flex; align-items: center; gap: 12px; background: var(--surface2);
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 6px;
+}
+.sol-row:hover { background: #35355A; }
+.sol-info { flex: 1; }
+.sol-name { font-size: 13px; font-weight: 600; }
+.sol-sub  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+/* ── Checkbox ── */
+input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--blue); }
+
+/* ── Divider ── */
+.divider { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+/* ── HTMX loading indicator ── */
+.htmx-request .htmx-indicator { display: inline-block; }
+.htmx-indicator { display: none; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Toast notifications ── */
+#toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+.toast { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; font-size: 13px; min-width: 260px; animation: slideIn .2s ease; display: flex; align-items: center; gap: 10px; }
+.toast-ok   { border-left: 3px solid var(--green); }
+.toast-err  { border-left: 3px solid var(--red); }
+.toast-info { border-left: 3px solid var(--blue); }
+@keyframes slideIn { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:none; } }
+
+/* ── Quick actions grid ── */
+.actions-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 20px; }
+.action-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; cursor: pointer; text-decoration: none; transition: border-color .2s; display: block; }
+.action-card:hover { border-color: var(--blue); }
+.action-icon { font-size: 22px; margin-bottom: 8px; }
+.action-title { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.action-desc { font-size: 12px; color: var(--muted); }
+
+/* ── Split panel ── */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* ── Progress bar ── */
+.progress { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.progress-bar { height: 100%; background: var(--blue); border-radius: 3px; transition: width .3s; }
+
+@media (max-width: 900px) {
+  .stats-grid { grid-template-columns: repeat(2,1fr); }
+  .split { grid-template-columns: 1fr; }
+  .actions-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Mobile (≤ 640px) ── */
+@media (max-width: 640px) {
+
+  /* Sidebar se oculta por defecto, desliza desde la izquierda */
+  .sidebar {
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+    z-index: 200;
+    width: 260px;
+  }
+  .sidebar.open { transform: translateX(0); }
+
+  /* Overlay oscuro detrás del sidebar abierto */
+  .sidebar-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.55);
+    z-index: 199;
+  }
+  .sidebar-overlay.open { display: block; }
+
+  /* El contenido ocupa toda la pantalla */
+  .main { margin-left: 0; padding: 16px; padding-top: 60px; }
+
+  /* Barra superior móvil */
+  .mobile-topbar {
+    display: flex;
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 52px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+    z-index: 150;
+  }
+  .mobile-topbar .title { font-size: 15px; font-weight: 600; flex: 1; }
+  .hamburger {
+    background: none; border: none; cursor: pointer;
+    color: var(--text); font-size: 20px; padding: 4px;
+    line-height: 1;
+  }
+
+  /* Ajustes de componentes */
+  .stats-grid { grid-template-columns: repeat(2,1fr); gap: 10px; }
+  .stat-value { font-size: 22px; }
+  .actions-grid { grid-template-columns: 1fr; gap: 10px; }
+  .page-header h1 { font-size: 18px; }
+  .card { padding: 14px; }
+
+  /* Tabla en móvil: scroll horizontal */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 520px; }
+
+  /* Formularios en columna */
+  .form-row { flex-direction: column; }
+  .form-row .input { width: 100%; }
+
+  /* Botones full width en acciones críticas */
+  .btn-block-mobile { width: 100%; justify-content: center; }
+}
+
+/* En pantallas grandes la topbar móvil no existe */
+@media (min-width: 641px) {
+  .mobile-topbar { display: none; }
+  .sidebar-overlay { display: none !important; }
+}

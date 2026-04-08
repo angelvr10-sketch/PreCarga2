@@ -1,0 +1,20 @@
+{% if solicitudes %}
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>No. Solicitud</th><th>Compañía</th><th>Personas</th><th>Modificado</th><th></th></tr></thead>
+    <tbody>
+    {% for s in solicitudes %}
+    <tr>
+      <td><b>{{ s.nombre }}</b></td>
+      <td style="color:var(--muted)">{{ s.compania or '—' }}</td>
+      <td><span class="badge badge-blue">{{ s.n }} persona{{ 's' if s.n != 1 else '' }}</span></td>
+      <td style="color:var(--muted);font-size:12px">{{ s.fecha_mod }}</td>
+      <td><a href="/api/descargar/{{ s.nombre }}.xlsx" class="btn btn-ghost btn-sm">⬇</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p style="color:var(--muted);text-align:center;padding:20px">No hay solicitudes procesadas aún</p>
+{% endif %}

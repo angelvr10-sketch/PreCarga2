@@ -1,0 +1,23 @@
+<div class="table-wrap" id="tabla-companias">
+  <table>
+    <thead><tr><th>Razón social</th><th>Nombre corto</th><th style="width:60px"></th></tr></thead>
+    <tbody>
+    {% for c in companias %}
+    <tr data-razon="{{ c.razon_social }}">
+      <td>{{ c.razon_social }}</td>
+      <td><b>{{ c.nombre_corto }}</b></td>
+      <td>
+        <button class="btn btn-danger btn-sm"
+                hx-post="/htmx/companias/eliminar"
+                hx-vals='{"razon_social": "{{ c.razon_social }}"}'
+                hx-target="#tabla-companias"
+                hx-swap="outerHTML"
+                hx-confirm="¿Eliminar {{ c.nombre_corto }}?">✕</button>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" style="text-align:center;color:var(--muted);padding:20px">Sin compañías registradas</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>

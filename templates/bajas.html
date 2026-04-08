@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Bajas · Precarga SHAT{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>⬇️ Bajas — Personal que sale</h1>
+  <p>Selecciona solicitudes, carga tu BD de personal y genera la plantilla de salidas</p>
+</div>
+
+<div class="split">
+
+  <!-- Lista de bajas -->
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div class="card-title" style="margin:0">Solicitudes de baja</div>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="selectAll('solicitudes',true)">Todo</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="selectAll('solicitudes',false)">Ninguno</button>
+      </div>
+    </div>
+
+    <form id="form-bajas">
+    {% if bajas %}
+    <div style="max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
+      {% for b in bajas %}
+      <label class="sol-row" style="cursor:pointer">
+        <input type="checkbox" name="solicitudes" value="{{ b.nombre }}" checked>
+        <div class="sol-info">
+          <div class="sol-name">{{ b.nombre }}</div>
+          <div class="sol-sub">{{ b.compania or '—' }}</div>
+        </div>
+        <span class="badge badge-red">{{ b.n }} persona{{ 's' if b.n != 1 else '' }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:var(--muted);text-align:center;padding:24px">No hay archivos *-B.csv en /solicitudes</p>
+    {% endif %}
+    </form>
+  </div>
+
+  <!-- BD + Exportar -->
+  <div class="card" style="display:flex;flex-direction:column;gap:16px">
+    <div class="card-title">Base de datos de personal</div>
+
+    <div>
+      <div class="upload-zone" id="bd-zone" style="padding:20px">
+        <div style="font-size:24px">📂</div>
+        <p>Haz clic para seleccionar el CSV de personal</p>
+      </div>
+      <input type="file" id="bd-input" accept=".csv" style="display:none"
+             onchange="uploadBD(this,'bd-label')">
+      <div id="bd-label" style="margin-top:8px;font-size:12px;color:var(--muted)">(ningún archivo cargado)</div>
+    </div>
+
+    <hr class="divider">
+
+    <div>
+      <div id="resultado-bajas"></div>
+      <button type="button" class="btn btn-success" style="width:100%"
+              onclick="buscarYExportar('form-bajas')">
+        🔍 Buscar y generar plantilla de salidas
+      </button>
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  initUploadZone("bd-zone", "bd-input");
+});
+</script>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Precarga SHAT{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Dashboard</h1>
+  <p>Resumen del sistema de precarga SHAT</p>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card"><div class="stat-value" style="color:var(--blue)">{{ stats.solicitudes }}</div><div class="stat-label">Solicitudes procesadas</div></div>
+  <div class="stat-card"><div class="stat-value" style="color:var(--red)">{{ stats.bajas }}</div><div class="stat-label">Registros de bajas</div></div>
+  <div class="stat-card"><div class="stat-value" style="color:var(--green)">{{ stats.companias }}</div><div class="stat-label">Compañías</div></div>
+  <div class="stat-card"><div class="stat-value" style="color:var(--amber)">{{ stats.activos }}</div><div class="stat-label">Activos</div></div>
+</div>
+
+<div class="actions-grid">
+  <a class="action-card" href="/procesar">
+    <div class="action-icon">📄</div>
+    <div class="action-title">Procesar PDFs</div>
+    <div class="action-desc">Convierte solicitudes PDF a plantillas Excel</div>
+  </a>
+  <a class="action-card" href="/altas">
+    <div class="action-icon">⬆️</div>
+    <div class="action-title">Generar Entradas</div>
+    <div class="action-desc">Plantilla de personal que sube</div>
+  </a>
+  <a class="action-card" href="/bajas">
+    <div class="action-icon">⬇️</div>
+    <div class="action-title">Gestión de Bajas</div>
+    <div class="action-desc">Buscar en BD y generar plantilla de salidas</div>
+  </a>
+</div>
+
+<div class="card">
+  <div class="card-title">Últimas solicitudes procesadas</div>
+  {% if solicitudes %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>No. Solicitud</th><th>Compañía</th><th>Personas</th><th>Modificado</th><th></th></tr></thead>
+      <tbody>
+      {% for s in solicitudes %}
+      <tr>
+        <td><b>{{ s.nombre }}</b></td>
+        <td>{{ s.compania or '—' }}</td>
+        <td><span class="badge badge-blue">{{ s.n }} persona{{ 's' if s.n != 1 else '' }}</span></td>
+        <td style="color:var(--muted)">{{ s.fecha_mod }}</td>
+        <td><a href="/api/descargar/{{ s.nombre }}.xlsx" class="btn btn-ghost btn-sm">⬇ Descargar</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted);text-align:center;padding:20px">No hay solicitudes procesadas aún</p>
+  {% endif %}
+</div>
+
+{% endblock %}

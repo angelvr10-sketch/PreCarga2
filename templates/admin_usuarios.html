@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Usuarios · Precarga SHAT{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>👥 Administración de usuarios</h1>
+  <p>Gestiona cuentas y suscripciones</p>
+</div>
+
+<!-- Crear usuario -->
+<div class="card">
+  <div class="card-title">Crear usuario</div>
+  <form method="post" action="/admin/usuarios/crear">
+    <div style="display:grid;grid-template-columns:1fr 1fr 120px 120px auto;gap:10px;align-items:flex-end">
+      <div>
+        <div class="form-label">Usuario</div>
+        <input class="input" name="username" placeholder="nombre de usuario" required>
+      </div>
+      <div>
+        <div class="form-label">Contraseña</div>
+        <input class="input" type="password" name="password" placeholder="mínimo 6 caracteres" required>
+      </div>
+      <div>
+        <div class="form-label">Días</div>
+        <input class="input" type="number" name="dias" value="30" min="1" max="3650">
+      </div>
+      <div>
+        <div class="form-label">Rol</div>
+        <select class="select" name="rol">
+          <option value="usuario">Usuario</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" type="submit">+ Crear</button>
+    </div>
+  </form>
+</div>
+
+<!-- Tabla de usuarios -->
+<div class="card">
+  <div class="card-title">{{ usuarios|length }} usuario(s) registrados</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Usuario</th>
+          <th>Rol</th>
+          <th>Estado</th>
+          <th>Suscripción expira</th>
+          <th>Días restantes</th>
+          <th>Agregar días</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for u in usuarios %}
+      {% set hoy = now() %}
+      {% set expira = u.expira or '' %}
+      {% set vigente = expira >= hoy if expira else false %}
+      <tr>
+        <td><b>{{ u.username }}</b></td>
+        <td>
+          <span class="badge {{ 'badge-blue' if u.rol == 'admin' else 'badge-green' }}">{{ u.rol }}</span>
+        </td>
+        <td>
+          <span class="badge {{ 'badge-green' if u.activo else 'badge-red' }}">
+            {{ 'Activo' if u.activo else 'Suspendido' }}
+          </span>
+        </td>
+        <td style="color:{{ 'var(--green)' if vigente else 'var(--red)' }}">
+          {{ expira or '—' }}
+        </td>
+        <td style="color:var(--muted)">
+          {% if expira %}
+            {% set dias = dias_restantes(u) %}
+            {{ dias }} día{{ 's' if dias != 1 else '' }}
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          <form method="post" action="/admin/usuarios/dias" style="display:flex;gap:6px">
+            <input type="hidden" name="uid" value="{{ u.id }}">
+            <input class="input" type="number" name="dias" value="30" min="1" style="width:70px">
+            <button class="btn btn-ghost btn-sm" type="submit">+ Agregar</button>
+          </form>
+        </td>
+        <td style="display:flex;gap:6px">
+          {% if u.username != 'admin' %}
+          <form method="post" action="/admin/usuarios/toggle">
+            <input type="hidden" name="uid" value="{{ u.id }}">
+            <button class="btn btn-ghost btn-sm" type="submit">
+              {{ '🔴 Suspender' if u.activo else '🟢 Activar' }}
+            </button>
+          </form>
+          <form method="post" action="/admin/usuarios/eliminar"
+                onsubmit="return confirm('¿Eliminar a {{ u.username }}?')">
+            <input type="hidden" name="uid" value="{{ u.id }}">
+            <button class="btn btn-danger btn-sm" type="submit">✕ Eliminar</button>
+          </form>
+          {% else %}
+          <span style="color:var(--muted);font-size:12px">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Precarga SHAT{% endblock %}</title>
+<link rel="stylesheet" href="/static/css/app.css">
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <div class="title">🛢 Precarga SHAT</div>
+    <div class="version">v0.3 · Web</div>
+  </div>
+
+  <nav style="padding-top:8px">
+    <a class="nav-item {% if page=='dashboard' %}active{% endif %}" href="/"><span class="nav-icon">🏠</span>Dashboard</a>
+    <a class="nav-item {% if page=='procesar' %}active{% endif %}" href="/procesar"><span class="nav-icon">📄</span>Procesar PDFs</a>
+    <a class="nav-item {% if page=='altas' %}active{% endif %}" href="/altas"><span class="nav-icon">⬆️</span>Altas</a>
+    <a class="nav-item {% if page=='bajas' %}active{% endif %}" href="/bajas"><span class="nav-icon">⬇️</span>Bajas</a>
+    <a class="nav-item {% if page=='companias' %}active{% endif %}" href="/companias"><span class="nav-icon">🏢</span>Compañías</a>
+    <a class="nav-item {% if page=='activos' %}active{% endif %}" href="/activos"><span class="nav-icon">🗃️</span>Activos</a>
+    <a class="nav-item {% if page=='logs' %}active{% endif %}" href="/logs"><span class="nav-icon">📊</span>Logs</a>
+  </nav>
+
+  <div class="sidebar-footer">PEMEX · Logística Marina</div>
+</div>
+
+<main class="main">
+  <div id="toast-container"></div>
+  {% block content %}{% endblock %}
+</main>
+
+<script src="/static/js/app.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

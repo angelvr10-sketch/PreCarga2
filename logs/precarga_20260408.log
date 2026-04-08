@@ -1,0 +1,12 @@
+2026-04-08 10:23:07,833 - INFO - Extraídos 14 registros (sube) de tmpp6kp19mu.pdf
+2026-04-08 10:23:08,601 - INFO - Datos extraídos de solicitud CME-01042026-0253
+2026-04-08 10:23:09,901 - INFO - CSV de bajas: CME-01042026-0253-B.csv
+2026-04-08 10:23:11,300 - ERROR - Error procesando tmpp6kp19mu.pdf: UNIQUE constraint failed: solicitudes.numero
+2026-04-08 10:23:35,353 - INFO - Extraídos 54 registros (sube) de tmpuhkvm7gf.pdf
+2026-04-08 10:23:36,105 - INFO - Datos extraídos de solicitud CME-01042026-0252
+2026-04-08 10:23:40,586 - INFO - CSV de bajas: CME-01042026-0252-B.csv
+2026-04-08 10:23:42,232 - ERROR - Error procesando tmpuhkvm7gf.pdf: UNIQUE constraint failed: solicitudes.numero
+2026-04-08 10:25:53,842 - INFO - Extraídos 37 registros (sube) de tmp0v8tstm3.pdf
+2026-04-08 10:25:54,777 - INFO - Datos extraídos de solicitud CME-05042026-0049
+2026-04-08 10:25:57,646 - INFO - CSV de bajas: CME-05042026-0049-B.csv
+2026-04-08 10:25:59,289 - INFO - Archivo generado: CME-05042026-0049.xlsx | Bajas: 35 persona(s)

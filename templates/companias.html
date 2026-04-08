@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Compañías · Precarga SHAT{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>🏢 Compañías</h1>
+  <p>Administra el catálogo de empresas contratistas</p>
+</div>
+
+<div class="card">
+  <div class="card-title">Agregar compañía</div>
+  <form hx-post="/htmx/companias/agregar" hx-target="#tabla-companias" hx-swap="outerHTML"
+        hx-on::after-request="this.reset()">
+    <div class="form-row">
+      <input class="input" name="razon_social" placeholder="Razón social exacta (como aparece en el PDF)" required>
+      <input class="input" name="nombre_corto" placeholder="Nombre corto" style="max-width:180px" required>
+      <button class="btn btn-primary" type="submit">+ Agregar</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div class="card-title" style="margin:0">{{ companias|length }} compañías registradas</div>
+    <input class="input" placeholder="🔍 Buscar..." style="max-width:220px"
+           oninput="filtrar(this.value,'tabla-companias','tr[data-razon]','data-razon')">
+  </div>
+
+  <div id="tabla-companias">
+    {% include "partials/tabla_companias.html" %}
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function filtrar(q, tableId, rowSel, attr) {
+  const q2 = q.toLowerCase();
+  document.querySelectorAll(`#${tableId} ${rowSel}`).forEach(r => {
+    r.style.display = r.getAttribute(attr).toLowerCase().includes(q2) ? "" : "none";
+  });
+}
+</script>
+{% endblock %}

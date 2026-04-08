@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Activos · Precarga SHAT{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>🗃️ Activos</h1>
+  <p>Administra los activos PEMEX para identificar áreas en los PDFs</p>
+</div>
+
+<div class="card">
+  <div class="card-title">Agregar activo</div>
+  <form hx-post="/htmx/activos/agregar" hx-target="#lista-activos" hx-swap="outerHTML"
+        hx-on::after-request="this.reset()">
+    <div class="form-row">
+      <input class="input" name="activo" placeholder="Nombre exacto del activo (como aparece en el PDF)" required>
+      <button class="btn btn-primary" type="submit">+ Agregar</button>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div class="card-title" style="margin:0">{{ activos|length }} activos registrados</div>
+    <input class="input" placeholder="🔍 Buscar..." style="max-width:220px"
+           oninput="filtrar(this.value,'lista-activos','div[data-activo]','data-activo')">
+  </div>
+
+  <div id="lista-activos">
+    {% include "partials/lista_activos.html" %}
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function filtrar(q, listId, itemSel, attr) {
+  const q2 = q.toLowerCase();
+  document.querySelectorAll(`#${listId} ${itemSel}`).forEach(r => {
+    r.style.display = r.getAttribute(attr).toLowerCase().includes(q2) ? "" : "none";
+  });
+}
+</script>
+{% endblock %}
