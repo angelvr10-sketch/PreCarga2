@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+
+{% block title %}Planes y Precios - Precarga SHAT{% endblock %}
+
+{% block content %}
+<style>
+  .planes-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
+
+  .planes-header {
+    text-align: center;
+    margin-bottom: 3rem;
+  }
+
+  .planes-header h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  .planes-header p {
+    color: #64748b;
+    font-size: 1rem;
+  }
+
+  .planes-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+    margin-bottom: 2rem;
+  }
+
+  .plan-card {
+    background: white;
+    border-radius: 16px;
+    padding: 2rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .plan-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+  }
+
+  .plan-card.popular {
+    border: 2px solid #3b82f6;
+  }
+
+  .popular-badge {
+    position: absolute;
+    top: 1rem;
+    right: -2rem;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+    padding: 0.25rem 3rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    transform: rotate(45deg);
+  }
+
+  .plan-icon {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .plan-name {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+  }
+
+  .plan-desc {
+    color: #64748b;
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .plan-price {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .plan-price .currency {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #3b82f6;
+  }
+
+  .plan-price .amount {
+    font-size: 3rem;
+    font-weight: 800;
+    color: #1e293b;
+    line-height: 1;
+  }
+
+  .plan-price .period {
+    color: #64748b;
+    font-size: 0.9rem;
+  }
+
+  .plan-features {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 2rem 0;
+  }
+
+  .plan-features li {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0;
+    font-size: 0.9rem;
+    color: #475569;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  .plan-features li:last-child {
+    border-bottom: none;
+  }
+
+  .plan-features i {
+    color: #22c55e;
+    font-size: 1rem;
+  }
+
+  .plan-btn {
+    width: 100%;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 1rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .plan-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+  }
+
+  .info-box {
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 1.5rem;
+    text-align: center;
+    margin-top: 2rem;
+  }
+
+  .info-box h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .info-box p {
+    color: #64748b;
+    font-size: 0.9rem;
+    margin: 0;
+  }
+
+  .payment-methods {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .payment-method {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #475569;
+    font-size: 0.85rem;
+  }
+
+  .payment-method i {
+    color: #3b82f6;
+  }
+</style>
+
+<div class="planes-container">
+  <div class="planes-header">
+    <h1>
+      <i class="bi bi-stars"></i>
+      Planes y Precios
+    </h1>
+    <p>Elige el plan que mejor se adapte a tus necesidades</p>
+  </div>
+
+  <div class="planes-grid">
+    <!-- Plan Semanal -->
+    <div class="plan-card popular">
+      <div class="popular-badge">POPULAR</div>
+      <div class="plan-icon">🚀</div>
+      <h2 class="plan-name">Plan Semanal</h2>
+      <p class="plan-desc">Acceso completo por 7 días</p>
+
+      <div class="plan-price">
+        <span class="currency">$</span>
+        <span class="amount">{{ plan_precio|int }}</span>
+        <span class="period">{{ plan_moneda }}</span>
+      </div>
+
+      <ul class="plan-features">
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Procesamiento ilimitado de PDFs</span>
+        </li>
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Generación de archivos Excel</span>
+        </li>
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Gestión de altas y bajas</span>
+        </li>
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Catálogo de compañías y activos</span>
+        </li>
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Soporte técnico incluido</span>
+        </li>
+      </ul>
+
+      <a href="/checkout" class="plan-btn">
+        <i class="bi bi-shield-check"></i>
+        Comprar Ahora
+      </a>
+    </div>
+
+    <!-- Plan Mensual (Próximamente) -->
+    <div class="plan-card" style="opacity: 0.7;">
+      <div class="plan-icon">💎</div>
+      <h2 class="plan-name">Plan Mensual</h2>
+      <p class="plan-desc">Acceso completo por 30 días</p>
+
+      <div class="plan-price">
+        <span class="currency">$</span>
+        <span class="amount">???</span>
+        <span class="period">{{ plan_moneda }}</span>
+      </div>
+
+      <ul class="plan-features">
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Todo lo del plan semanal</span>
+        </li>
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>30 días de acceso completo</span>
+        </li>
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Mejor precio por día</span>
+        </li>
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Soporte prioritario</span>
+        </li>
+      </ul>
+
+      <button class="plan-btn" disabled style="background: #94a3b8; cursor: not-allowed;">
+        <i class="bi bi-clock"></i>
+        Próximamente
+      </button>
+    </div>
+  </div>
+
+  <div class="info-box">
+    <h3>
+      <i class="bi bi-shield-fill-check"></i>
+      Pagos 100% seguros
+    </h3>
+    <p>Procesados por MercadoPago - La plataforma de pagos más confiable de Latinoamérica</p>
+
+    <div class="payment-methods">
+      <div class="payment-method">
+        <i class="bi bi-credit-card"></i>
+        <span>Tarjeta de crédito/débito</span>
+      </div>
+      <div class="payment-method">
+        <i class="bi bi-building"></i>
+        <span>OXXO</span>
+      </div>
+      <div class="payment-method">
+        <i class="bi bi-bank"></i>
+        <span>Transferencia SPEI</span>
+      </div>
+      <div class="payment-method">
+        <i class="bi bi-wallet2"></i>
+        <span>Mercado Pago</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align: center; margin-top: 2rem;">
+    <a href="/dashboard" style="color: #64748b; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;">
+      <i class="bi bi-arrow-left"></i>
+      Volver al Dashboard
+    </a>
+  </div>
+</div>
+{% endblock %}

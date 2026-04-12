@@ -1,0 +1,491 @@
+{% extends "base.html" %}
+
+{% block title %}Comprar Suscripción - Precarga SHAT{% endblock %}
+
+{% block content %}
+<style>
+  .checkout-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem 1rem;
+  }
+
+  .checkout-header {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+
+  .checkout-header h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  .checkout-header p {
+    color: #64748b;
+    font-size: 0.95rem;
+  }
+
+  .checkout-grid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 2rem;
+  }
+
+  @media (max-width: 768px) {
+    .checkout-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .plan-card {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    border-radius: 16px;
+    padding: 2rem;
+    color: white;
+    box-shadow: 0 10px 40px rgba(59, 130, 246, 0.3);
+  }
+
+  .plan-card h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+
+  .plan-card .subtitle {
+    opacity: 0.9;
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .plan-price {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .plan-price .currency {
+    font-size: 1.5rem;
+    font-weight: 600;
+  }
+
+  .plan-price .amount {
+    font-size: 3.5rem;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  .plan-price .period {
+    opacity: 0.8;
+    font-size: 0.95rem;
+  }
+
+  .plan-features {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .plan-features li {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0;
+    font-size: 0.95rem;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+
+  .plan-features li:last-child {
+    border-bottom: none;
+  }
+
+  .plan-features i {
+    font-size: 1.1rem;
+  }
+
+  .payment-section {
+    background: white;
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  }
+
+  .payment-section h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1e293b;
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .payment-methods {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .payment-method {
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: white;
+  }
+
+  .payment-method:hover {
+    border-color: #3b82f6;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+  }
+
+  .payment-method.selected {
+    border-color: #3b82f6;
+    background: #eff6ff;
+  }
+
+  .payment-method .icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .payment-method .name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #475569;
+  }
+
+  .payment-method .desc {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    margin-top: 0.25rem;
+  }
+
+  .secure-badge {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background: #f8fafc;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    font-size: 0.8rem;
+    color: #64748b;
+  }
+
+  .secure-badge i {
+    color: #22c55e;
+  }
+
+  .pay-button {
+    width: 100%;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 1rem 1.5rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .pay-button:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+  }
+
+  .pay-button:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+  }
+
+  .pay-button .price {
+    opacity: 0.9;
+  }
+
+  .info-box {
+    background: #f1f5f9;
+    border-left: 4px solid #3b82f6;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .info-box p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #475569;
+  }
+
+  .info-box strong {
+    color: #1e293b;
+  }
+
+  .alert {
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+  }
+
+  .alert-warning {
+    background: #fef3c7;
+    border: 1px solid #fbbf24;
+    color: #92400e;
+  }
+
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #ffffff;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .mp-logo {
+    height: 24px;
+    opacity: 0.6;
+    margin-top: 1rem;
+  }
+</style>
+
+<div class="checkout-container">
+  <div class="checkout-header">
+    <h1>
+      <i class="bi bi-shield-check"></i>
+      Comprar Suscripción
+    </h1>
+    <p>Activa tu acceso completo al sistema Precarga SHAT</p>
+  </div>
+
+  {% if not configurado %}
+  <div class="alert alert-warning" style="text-align: center; margin-bottom: 2rem;">
+    <i class="bi bi-exclamation-triangle" style="font-size: 1.5rem; display: block; margin-bottom: 0.5rem;"></i>
+    <strong>Modo de demostración:</strong> MercadoPago no está configurado.
+    <br>Contacta al administrador para activar pagos reales.
+  </div>
+  {% endif %}
+
+  <div class="checkout-grid">
+    <!-- Plan Card -->
+    <div class="plan-card">
+      <h2>Plan 7 Días</h2>
+      <p class="subtitle">Acceso completo a todas las funciones</p>
+
+      <div class="plan-price">
+        <span class="currency">$</span>
+        <span class="amount">{{ plan_precio|int }}</span>
+        <span class="period">/{{ plan_moneda }}</span>
+      </div>
+
+      <ul class="plan-features">
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Procesamiento ilimitado de PDFs</span>
+        </li>
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Generación de archivos Excel</span>
+        </li>
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Gestión de altas y bajas</span>
+        </li>
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Catálogo de compañías y activos</span>
+        </li>
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>Soporte técnico incluido</span>
+        </li>
+        <li>
+          <i class="bi bi-check-circle-fill"></i>
+          <span>7 días de acceso completo</span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Payment Section -->
+    <div class="payment-section">
+      {% if user.expira %}
+      <div class="info-box">
+        <p>
+          <i class="bi bi-calendar-check" style="color: #3b82f6;"></i>
+          Tu suscripción actual vence el: <strong>{{ user.expira }}</strong>
+          <br>
+          <span style="font-size: 0.85rem; color: #64748b;">Los 7 días se agregarán automáticamente.</span>
+        </p>
+      </div>
+      {% endif %}
+
+      {% if pago_pendiente %}
+      <div class="alert" style="background: #fef3c7; border: 1px solid #fbbf24;">
+        <i class="bi bi-clock" style="font-size: 1.2rem;"></i>
+        <strong>Tienes un pago pendiente</strong>
+        <br>Estamos esperando la confirmación.
+        <a href="/checkout/pending" style="color: #92400e; text-decoration: underline;">Ver estado</a>
+      </div>
+      {% endif %}
+
+      <h3>
+        <i class="bi bi-credit-card"></i>
+        Selecciona un método de pago
+      </h3>
+
+      <div class="payment-methods">
+        {% if stripe_configurado %}
+        <div class="payment-method selected" data-method="stripe">
+          <div class="icon">
+            <svg width="32" height="32" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="60" height="60" rx="12" fill="#635BFF"/>
+              <path d="M39.94 25.64c0-1.64-1.33-2.49-2.86-2.49-2.13 0-4.33 1.12-6.23 2.37l-.42-2.74H20.19v28.39h10.24V38.7c1.76 1.36 4.07 2.19 6.23 2.19 3.07 0 5.28-1.83 5.28-4.75V25.64zM36.8 37.44c0 1.33-.92 2.12-2.44 2.12-.85 0-1.76-.33-2.59-.91l.02-4.06c.92-.62 1.83-1.09 2.59-1.09 1.48 0 2.42.87 2.42 2.14v1.8zM25.66 14.08h-9.83v28.39h9.83V14.08zm-3.15 22.18h-3.52V19.86h3.52v16.4z" fill="white"/>
+            </svg>
+          </div>
+          <div class="name">Stripe</div>
+          <div class="desc">Tarjeta credito/debito</div>
+        </div>
+        {% endif %}
+
+        <div class="payment-method {% if not stripe_configurado %}selected{% endif %}" data-method="card">
+          <div class="icon">💳</div>
+          <div class="name">MercadoPago</div>
+          <div class="desc">Credito o debito</div>
+        </div>
+
+        <div class="payment-method" data-method="oxxo">
+          <div class="icon">🏪</div>
+          <div class="name">Oxxo</div>
+          <div class="desc">Paga en tienda</div>
+        </div>
+
+        <div class="payment-method" data-method="spei">
+          <div class="icon">🏦</div>
+          <div class="name">SPEI</div>
+          <div class="desc">Transferencia bancaria</div>
+        </div>
+      </div>
+
+      <div class="secure-badge">
+        <i class="bi bi-shield-fill-check"></i>
+        <span>Pago seguro encriptado SSL</span>
+      </div>
+
+      <button id="btn-pagar" class="pay-button" {% if not configurado and not stripe_configurado %}disabled{% endif %}>
+        <span id="btn-text">
+          <i class="bi bi-lock-fill"></i>
+          Pagar <span class="price">${{ "%.2f"|format(plan_precio) }}</span>
+        </span>
+        <span id="btn-loading" class="hidden" style="display: none; align-items: center; gap: 0.5rem;">
+          <div class="spinner"></div>
+          Procesando...
+        </span>
+      </button>
+
+      <div style="text-align: center; margin-top: 1rem; display: flex; gap: 1rem; justify-content: center; align-items: center; flex-wrap: wrap;">
+        {% if configurado %}
+        <img src="https://www.mercadopago.com/org-img/insignias/MP-logo.png" alt="MercadoPago" class="mp-logo" style="height: 20px; opacity: 0.5;">
+        {% endif %}
+        {% if stripe_configurado %}
+        <span style="font-size: 0.75rem; color: #94a3b8;">Powered by</span>
+        <svg width="50" height="20" viewBox="0 0 60 25" fill="none" xmlns="http://www.w3.org/2000/svg" opacity="0.5">
+          <rect width="60" height="25" rx="4" fill="#635BFF"/>
+          <path d="M49.9 10.7c0-1.4-1.1-2.1-2.4-2.1-1.8 0-3.6.9-5.2 2l-.3-2.3H26v23.6h8.5V21c1.5 1.1 3.4 1.8 5.2 1.8 2.6 0 4.4-1.5 4.4-4v-8.1h-4.2zM46.4 20c0 1.1-.8 1.8-2 1.8-.7 0-1.5-.3-2.2-.8l.02-3.4c.8-.5 1.5-.9 2.2-.9 1.2 0 2 .7 2 1.8v1.5zM30.5 11.8h-8.2v23.6h8.2V11.8zm-2.6 18.4h-2.9V16.5h2.9v13.7z" fill="white"/>
+        </svg>
+        {% endif %}
+      </div>
+
+      <div id="message"></div>
+    </div>
+  </div>
+
+  <div style="text-align: center; margin-top: 2rem;">
+    <a href="/dashboard" style="color: #64748b; text-decoration: none; display: inline-flex; align-items: center; gap: 0.5rem;">
+      <i class="bi bi-arrow-left"></i>
+      Volver al Dashboard
+    </a>
+  </div>
+</div>
+
+{% if configurado and mp_public_key %}
+<script src="https://sdk.mercadopago.com/js/v2"></script>
+<script>
+  // Seleccion de metodo de pago
+  document.querySelectorAll('.payment-method').forEach(method => {
+    method.addEventListener('click', function() {
+      document.querySelectorAll('.payment-method').forEach(m => m.classList.remove('selected'));
+      this.classList.add('selected');
+    });
+  });
+
+  // Boton de pago
+  document.getElementById('btn-pagar').addEventListener('click', async function() {
+    const btn = document.getElementById('btn-pagar');
+    const btnText = document.getElementById('btn-text');
+    const btnLoading = document.getElementById('btn-loading');
+    const msgDiv = document.getElementById('message');
+
+    // Obtener metodo de pago seleccionado
+    const selectedMethod = document.querySelector('.payment-method.selected');
+    const method = selectedMethod ? selectedMethod.dataset.method : 'card';
+
+    // Si Stripe esta seleccionado, redirigir al checkout de Stripe
+    if (method === 'stripe') {
+      window.location.href = '/checkout/stripe';
+      return;
+    }
+
+    // MercadoPago
+    btn.disabled = true;
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'flex';
+
+    try {
+      const response = await fetch('/checkout/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await response.json();
+
+      if (data.ok) {
+        window.location.href = data.init_point || data.sandbox_init_point;
+      } else {
+        throw new Error(data.error || 'Error creando preferencia');
+      }
+    } catch (error) {
+      btn.disabled = false;
+      btnText.style.display = 'flex';
+      btnLoading.style.display = 'none';
+
+      msgDiv.innerHTML = `
+        <div style="background: #fee2e2; border: 1px solid #ef4444; color: #991b1b; padding: 1rem; border-radius: 8px; margin-top: 1rem;">
+          <i class="bi bi-exclamation-circle"></i> ${error.message}
+        </div>
+      `;
+    }
+  });
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Pago Exitoso - Precarga SHAT{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-12 max-w-lg">
+    <div class="bg-green-50 border border-green-200 rounded-lg p-8 text-center">
+        <div class="mb-4">
+            <i class="bi bi-check-circle-fill text-green-500 text-6xl"></i>
+        </div>
+
+        <h1 class="text-2xl font-bold text-green-800 mb-2">Pago Exitoso</h1>
+        <p class="text-green-700 mb-6">Tu suscripcion ha sido activada correctamente.</p>
+
+        {% if procesado %}
+        <div class="bg-green-100 rounded p-4 mb-6">
+            <p class="text-green-800 font-medium">
+                <i class="bi bi-calendar-check mr-2"></i>
+                Se han agregado 7 dias a tu suscripcion
+            </p>
+            <p class="text-sm text-green-600 mt-2">
+                Tu cuenta esta activa y puedes usar todas las funciones del sistema.
+            </p>
+        </div>
+        {% else %}
+        <div class="bg-amber-100 rounded p-4 mb-6">
+            <p class="text-amber-800">
+                <i class="bi bi-info-circle mr-2"></i>
+                Estamos procesando tu pago. Tu suscripcion se activara en unos momentos.
+            </p>
+        </div>
+        {% endif %}
+
+        {% if payment_id %}
+        <dl class="text-left text-sm mb-6">
+            <div class="flex justify-between py-2 border-b border-green-200">
+                <dt class="text-green-700">ID de Pago:</dt>
+                <dd class="text-green-900 font-mono">{{ payment_id }}</dd>
+            </div>
+            <div class="flex justify-between py-2 border-b border-green-200">
+                <dt class="text-green-700">Estado:</dt>
+                <dd class="text-green-900">{{ payment_status|default('Procesando')|title }}</dd>
+            </div>
+        </dl>
+        {% endif %}
+
+        <div class="space-y-3">
+            <a href="/dashboard" class="block w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-lg transition">
+                <i class="bi bi-house-door mr-2"></i>Ir al Dashboard
+            </a>
+
+            <a href="/procesar" class="block w-full bg-white border border-green-600 text-green-600 hover:bg-green-50 font-semibold py-3 px-6 rounded-lg transition">
+                <i class="bi bi-file-earmark-pdf mr-2"></i>Procesar PDF
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

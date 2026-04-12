@@ -1,7 +1,7 @@
 """routers/pages.py — Rutas de páginas HTML completas"""
 from datetime import datetime
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from templates_cfg import templates
 
 from core import (
@@ -24,8 +24,17 @@ def _baja_rows(archivos):
     return rows
 
 
-# ── Dashboard ────────────────────────────────────────────────
+# ── Landing Page ─────────────────────────────────────────────
 @router.get("/", response_class=HTMLResponse)
+async def landing(request: Request):
+    user = get_current_user(request)
+    if user:
+        return RedirectResponse("/dashboard", status_code=303)
+    return templates.TemplateResponse(request, "landing.html", {})
+
+
+# ── Dashboard ────────────────────────────────────────────────
+@router.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
     redir = require_login(request)
     if redir:

@@ -15,6 +15,10 @@ Abrir: http://localhost:8000
 """
 import os, sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Cargar variables de entorno desde .env
+load_dotenv()
 
 # Garantizar que el directorio del proyecto esté en sys.path
 _root = Path(__file__).resolve().parent
@@ -28,8 +32,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from routers import pages, api, htmx
 from routers import auth as auth_router
+from routers import payments as payments_router
 from core.auth import init_db
 from core.db import init_solicitudes_db
+from core.payments import init_payments_db
+from core.stripe import init_stripe_payments_db
 
 app = FastAPI(title="Precarga SHAT", version="0.3-web", docs_url=None)
 
@@ -38,6 +45,8 @@ app = FastAPI(title="Precarga SHAT", version="0.3-web", docs_url=None)
 def startup():
     init_db()
     init_solicitudes_db()
+    init_payments_db()
+    init_stripe_payments_db()
 
 # ── Middleware ────────────────────────────────────────────────
 app.add_middleware(
@@ -52,6 +61,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ── Routers ───────────────────────────────────────────────────
 app.include_router(auth_router.router)
+app.include_router(payments_router.router)
 app.include_router(pages.router)
 app.include_router(api.router)
 app.include_router(htmx.router)

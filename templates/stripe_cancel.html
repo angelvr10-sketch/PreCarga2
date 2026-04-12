@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Pago Cancelado - Precarga SHAT{% endblock %}
+
+{% block content %}
+<style>
+  .cancel-container {
+    max-width: 600px;
+    margin: 3rem auto;
+    padding: 2rem;
+  }
+
+  .cancel-card {
+    background: white;
+    border-radius: 16px;
+    padding: 3rem 2rem;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  }
+
+  .cancel-icon {
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1.5rem;
+  }
+
+  .cancel-icon i {
+    font-size: 2.5rem;
+    color: white;
+  }
+
+  .cancel-card h1 {
+    font-size: 1.75rem;
+    color: #1e293b;
+    margin-bottom: 0.5rem;
+  }
+
+  .cancel-card > p {
+    color: #64748b;
+    font-size: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .info-box {
+    background: #fef3c7;
+    border-left: 4px solid #f59e0b;
+    border-radius: 8px;
+    padding: 1rem;
+    margin: 1.5rem 0;
+    text-align: left;
+  }
+
+  .info-box p {
+    margin: 0;
+    font-size: 0.9rem;
+    color: #92400e;
+  }
+
+  .btn-group {
+    display: flex;
+    gap: 1rem;
+    margin-top: 2rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 12px;
+    padding: 0.875rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    border: none;
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px rgba(59, 130, 246, 0.4);
+  }
+
+  .btn-secondary {
+    background: #f1f5f9;
+    color: #475569;
+  }
+
+  .btn-secondary:hover {
+    background: #e2e8f0;
+    transform: translateY(-2px);
+  }
+</style>
+
+<div class="cancel-container">
+  <div class="cancel-card">
+    <div class="cancel-icon">
+      <i class="bi bi-x-lg"></i>
+    </div>
+    <h1>Pago Cancelado</h1>
+    <p>Has cancelado el proceso de pago. No se ha realizado ningun cargo.</p>
+
+    <div class="info-box">
+      <p>
+        <i class="bi bi-info-circle"></i>
+        Si tuviste algun problema durante el pago, puedes intentar de nuevo o contactar a soporte.
+      </p>
+    </div>
+
+    <div class="btn-group">
+      <a href="/checkout" class="btn btn-primary">
+        <i class="bi bi-arrow-clockwise"></i>
+        Intentar de nuevo
+      </a>
+      <a href="/dashboard" class="btn btn-secondary">
+        <i class="bi bi-house-fill"></i>
+        Ir al Dashboard
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}
