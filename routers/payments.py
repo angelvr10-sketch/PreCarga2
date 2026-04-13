@@ -146,15 +146,35 @@ async def stripe_success(request: Request, session_id: str = None):
     approved = False
 
     if session_id:
-        payment_info = obtener_info_sesion(session_id)
-        if payment_info and payment_info.get("payment_status") == "paid":
-            approved = True
-            # Procesar el pago si no se ha procesado via webhook
-            try:
+        try:
+            payment_info = obtener_info_sesion(session_id)
+            print(f"DEBUG success: payment_info = {payment_info}")
+
+            if payment_info and payment_info.get("payment_status") in ("paid", "no_payment_required"):
+                approved = True
+                # Procesar el pago directamente (puede que el webhook no llegue en dev)
                 event = {"type": "checkout.session.completed", "data": {"object": payment_info}}
                 procesar_evento_pago(event)
-            except Exception as e:
-                print(f"Error procesando pago en success: {e}")
+                print(f"DEBUG success: Pago procesado para session {session_id}")
+
+            elif payment_info and payment_info.get("payment_status") == "unpaid":
+                # Aún no pagado, Stripe redirigió pero el pago está pendiente
+                approved = False
+                print(f"DEBUG success: Pago aún no confirmado, payment_status=unpaid")
+
+            else:
+                # Intentar procesar de todos modos
+                print(f"DEBUG success: payment_status desconocido, intentando procesar")
+                event = {"type": "checkout.session.completed", "data": {"object": payment_info if payment_info else {"id": session_id}}}
+                procesar_evento_pago(event)
+                approved = payment_info.get("payment_status") == "paid" if payment_info else False
+
+        except Exception as e:
+            import traceback
+            print(f"Error procesando pago en success: {e}")
+            print(traceback.format_exc())
+            # Si hay un error, mostrar la info que tengamos
+            approved = False
 
     return templates.TemplateResponse(request, "stripe_success.html", {
         "user": user,
