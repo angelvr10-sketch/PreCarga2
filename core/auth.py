@@ -148,11 +148,26 @@ def suscripcion_vigente(user: dict) -> bool:
     return bool(user.get("expira") and user["expira"] >= hoy)
 
 
+def _parse_fecha(fecha_str: str) -> date:
+    """Parsea fecha tolerando formatos con y sin hora."""
+    fecha_str = fecha_str.strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(fecha_str, fmt).date()
+        except ValueError:
+            continue
+    # Si ninguno funciona, intentar extraer solo la parte de fecha
+    return datetime.strptime(fecha_str[:10], "%Y-%m-%d").date()
+
+
 def dias_restantes(user: dict) -> int:
     if not user.get("expira"):
         return 0
-    exp = datetime.strptime(user["expira"], "%Y-%m-%d").date()
-    return max(0, (exp - date.today()).days)
+    try:
+        exp = _parse_fecha(user["expira"])
+        return max(0, (exp - date.today()).days)
+    except Exception:
+        return 0
 
 
 # ──────────────────────────────────────────────────────────────
