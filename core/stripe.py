@@ -20,7 +20,8 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_PRICE = int(float(os.getenv("STRIPE_PLAN_PRICE", "499.00")) * 100)  # Stripe usa centavos
 STRIPE_DAYS = int(os.getenv("STRIPE_PLAN_DAYS", "7"))
 STRIPE_CURRENCY = os.getenv("STRIPE_CURRENCY", "mxn").lower()
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000").rstrip("/")
+_raw_base = os.getenv("BASE_URL", "").strip().strip('"').strip("'").rstrip("/")
+BASE_URL = _raw_base if _raw_base else "http://localhost:8000"
 
 # Inicializar Stripe
 if HAS_STRIPE and STRIPE_SECRET_KEY:
@@ -57,9 +58,13 @@ def crear_checkout_session(usuario_id: int, username: str) -> Dict[str, Any]:
     success_url = f"{BASE_URL}/stripe/success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{BASE_URL}/stripe/cancel"
 
-    print(f"DEBUG: BASE_URL={BASE_URL}")
-    print(f"DEBUG: success_url={success_url}")
-    print(f"DEBUG: cancel_url={cancel_url}")
+    # Validar URLs antes de enviar a Stripe
+    if not BASE_URL.startswith(("http://", "https://")):
+        raise Exception(f"BASE_URL invalido: '{BASE_URL}'. Debe empezar con http:// o https://")
+
+    print(f"DEBUG: BASE_URL='{BASE_URL}'")
+    print(f"DEBUG: success_url='{success_url}'")
+    print(f"DEBUG: cancel_url='{cancel_url}'")
 
     session = stripe.checkout.Session.create(
         payment_method_types=["card"],
