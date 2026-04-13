@@ -189,10 +189,10 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
             )
             print(f"DEBUG: Nuevo registro de pago creado")
 
-        # Agregar dias de suscripcion
-        print(f"DEBUG: Llamando agregar_dias({usuario_id}, {STRIPE_DAYS})")
-        agregar_dias(usuario_id, STRIPE_DAYS)
-        print(f"DEBUG: Suscripcion agregada exitosamente")
+    # Agregar dias de suscripcion FUERA del with para evitar database locked
+    print(f"DEBUG: Llamando agregar_dias({usuario_id}, {STRIPE_DAYS})")
+    agregar_dias(usuario_id, STRIPE_DAYS)
+    print(f"DEBUG: Suscripcion agregada exitosamente")
 
     return True
 
