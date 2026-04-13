@@ -11,7 +11,7 @@ except ImportError:
     HAS_STRIPE = False
     stripe = None
 
-from core.auth import agregar_dias
+from core.auth import agregar_dias, reset_descargas
 from core.supabase_db import _get, _post, _patch, verificar_conexion
 
 # Configuracion de Stripe
@@ -176,7 +176,8 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
     # Agregar dias de suscripcion
     print(f"DEBUG: Llamando agregar_dias({usuario_id}, {STRIPE_DAYS})")
     agregar_dias(usuario_id, STRIPE_DAYS)
-    print(f"DEBUG: Suscripcion agregada exitosamente")
+    reset_descargas(usuario_id)
+    print(f"DEBUG: Suscripcion agregada, descargas reseteadas")
 
     return True
 

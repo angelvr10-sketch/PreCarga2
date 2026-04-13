@@ -14,6 +14,9 @@ from core.supabase_db import (
     HAS_HTTPX, httpx
 )
 
+# Constante para descargas gratis
+MAX_DESCARGAS_GRATIS = 10
+
 
 # ──────────────────────────────────────────────────────────────
 #  Helpers
@@ -129,7 +132,7 @@ def get_user_from_token(token: Optional[str]) -> Optional[dict]:
     uid = sesiones[0]["usuario_id"]
 
     # Obtener usuario con su suscripcion
-    rows = _get("usuarios", filters={"id": f"eq.{uid}"}, select="id,username,rol")
+    rows = _get("usuarios", filters={"id": f"eq.{uid}"}, select="id,username,rol,descargas_usadas")
     if not rows:
         return None
 
@@ -170,12 +173,43 @@ def dias_restantes(user: dict) -> int:
         return 0
 
 
+def puede_descargar(user: dict) -> tuple[bool, str]:
+    """
+    Verifica si el usuario puede descargar.
+    Retorna (True, "") si puede, o (False, "razon") si no.
+    """
+    # Si tiene suscripcion vigente, puede descargar ilimitado
+    if suscripcion_vigente(user):
+        return True, ""
+
+    # Verificar descargas gratis disponibles
+    usadas = user.get("descargas_usadas", 0)
+    if usadas < MAX_DESCARGAS_GRATIS:
+        return True, ""
+
+    return False, f"Te quedaste sin descargas gratis ({usadas}/{MAX_DESCARGAS_GRATIS}). Compra una suscripcion."
+
+
+def contar_descarga(usuario_id: int):
+    """Incrementa el contador de descargas usadas del usuario."""
+    # Obtener valor actual
+    rows = _get("usuarios", filters={"id": f"eq.{usuario_id}"}, select="descargas_usadas")
+    if rows:
+        actuales = rows[0].get("descargas_usadas", 0)
+        _patch("usuarios", {"descargas_usadas": actuales + 1}, {"id": f"eq.{usuario_id}"})
+
+
+def reset_descargas(usuario_id: int):
+    """Resetea el contador de descargas (se llama cuando compra suscripcion)."""
+    _patch("usuarios", {"descargas_usadas": 0}, {"id": f"eq.{usuario_id}"})
+
+
 # ──────────────────────────────────────────────────────────────
 #  Registro
 # ──────────────────────────────────────────────────────────────
 
 def registrar(username: str, password: str, dias: int = 0, rol: str = "usuario") -> tuple[bool, str]:
-    """Crea un usuario nuevo. Devuelve (ok, mensaje)."""
+    """Crea un usuario nuevo. Si dias=0, se crea sin suscripcion (modo gratuito con 10 descargas)."""
     if len(username) < 3:
         return False, "El usuario debe tener al menos 3 caracteres"
     if len(password) < 6:
@@ -190,6 +224,7 @@ def registrar(username: str, password: str, dias: int = 0, rol: str = "usuario")
             "password": _hash(password),
             "rol": rol,
             "activo": True,
+            "descargas_usadas": 0,
             "creado": _now()
         })
 
@@ -202,7 +237,7 @@ def registrar(username: str, password: str, dias: int = 0, rol: str = "usuario")
                     "expira": _fecha_expira(dias),
                     "creado": _now()
                 })
-        return True, "Usuario creado correctamente"
+        return True, "Usuario creado correctamente. Tienes 10 descargas gratis disponibles."
     except Exception as e:
         return False, f"Error creando usuario: {e}"
 
@@ -212,7 +247,7 @@ def registrar(username: str, password: str, dias: int = 0, rol: str = "usuario")
 # ──────────────────────────────────────────────────────────────
 
 def listar_usuarios() -> list[dict]:
-    rows = _get("usuarios", select="id,username,rol,activo,creado", order="creado.desc")
+    rows = _get("usuarios", select="id,username,rol,activo,descargas_usadas,creado", order="creado.desc")
     result = [dict(r) for r in rows]
 
     # Agregar fecha de expiracion

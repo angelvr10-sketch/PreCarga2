@@ -8,8 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi import APIRouter, Request, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, RedirectResponse
 
 from core import (
     llenar_plantilla, leer_personal_de_xlsx,
@@ -18,6 +18,7 @@ from core import (
     logger, SOL_DIR, LOGS_DIR,
 )
 from core.config import RUTA_PLANTILLA_SALIDA, RUTA_PLANTILLA_ENTRADA
+from core.auth import get_current_user, puede_descargar, contar_descarga, MAX_DESCARGAS_GRATIS
 
 router = APIRouter(prefix="/api")
 
@@ -175,7 +176,23 @@ async def generar_entradas(solicitudes: list[str] = Form(...)):
 
 # ── Descargar archivo ─────────────────────────────────────────
 @router.get("/descargar/{nombre}")
-async def descargar(nombre: str):
+async def descargar(request: Request, nombre: str):
+    # Verificar autenticacion
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/login", status_code=303)
+
+    # Verificar si puede descargar (suscripcion activa o descargas gratis)
+    puede, razon = puede_descargar(user)
+    if not puede:
+        # Redirigir a checkout con mensaje
+        return RedirectResponse("/checkout?no_downloads=1", status_code=303)
+
+    # Contar descarga si es usuario gratuito
+    from core.auth import suscripcion_vigente
+    if not suscripcion_vigente(user):
+        contar_descarga(user["id"])
+
     # Buscar en solicitudes/
     ruta = SOL_DIR / nombre
     if not ruta.exists():

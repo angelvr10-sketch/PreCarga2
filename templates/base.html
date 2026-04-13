@@ -46,13 +46,9 @@
     <div style="margin-bottom:8px">
       <div style="color:var(--text);font-size:12px;font-weight:600">{{ user.username }}</div>
       {% set dias = dias_restantes(user) %}
-      {% if dias < 5 %}
-      <div style="margin-top:8px">
-        <a href="/checkout" class="btn btn-primary btn-sm" style="width:100%;justify-content:center;display:flex;align-items:center;gap:4px;background:var(--green);color:white;border:none">
-          <span>💳</span> Comprar 7 días
-        </a>
-      </div>
-      {% else %}
+      {% set descargas_usadas = user.descargas_usadas | default(0) %}
+      {% set descargas_restantes = 10 - descargas_usadas %}
+      {% if dias > 0 %}
       <div style="color:var(--muted);font-size:11px;margin-top:2px">
         {% if dias > 10 %}
           <span style="color:var(--green)">● {{ dias }} días restantes</span>
@@ -61,6 +57,16 @@
         {% else %}
           <span style="color:var(--red)">● {{ dias }} días restantes</span>
         {% endif %}
+      </div>
+      {% elif descargas_restantes > 0 %}
+      <div style="color:var(--muted);font-size:11px;margin-top:2px">
+        <span style="color:var(--blue)">● {{ descargas_restantes }}/10 descargas gratis</span>
+      </div>
+      {% else %}
+      <div style="margin-top:8px">
+        <a href="/checkout" class="btn btn-primary btn-sm" style="width:100%;justify-content:center;display:flex;align-items:center;gap:4px;background:var(--green);color:white;border:none">
+          <span>💳</span> Comprar suscripción
+        </a>
       </div>
       {% endif %}
     </div>

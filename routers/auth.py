@@ -16,12 +16,12 @@ router    = APIRouter()
 
 # ── Login ─────────────────────────────────────────────────────
 @router.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, expired: int = 0, error: int = 0):
+async def login_page(request: Request, expired: int = 0, error: int = 0, registered: int = 0):
     user = get_current_user(request)
     if user:
         return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse(request, "login.html", {
-        "expired": expired, "error": error
+        "expired": expired, "error": error, "registered": registered
     })
 
 
@@ -64,10 +64,10 @@ async def registro_post(request: Request,
     if password != password2:
         return templates.TemplateResponse(request, "registro.html",
                                           {"error": "Las contraseñas no coinciden"})
-    ok, msg = registrar(username, password, dias=0)
+    ok, msg = registrar(username, password, dias=0)  # dias=0 -> sin suscripcion, 10 descargas gratis
     if not ok:
         return templates.TemplateResponse(request, "registro.html", {"error": msg})
-    # Registro exitoso — sin suscripción, el admin la asigna
+    # Registro exitoso — redirigir a login
     return RedirectResponse("/login?registered=1", status_code=303)
 
 

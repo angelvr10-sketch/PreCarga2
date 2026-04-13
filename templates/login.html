@@ -28,6 +28,9 @@
   </div>
 
   <div class="card">
+    {% if registered %}
+    <div class="alert" style="background:#0a3a1a;color:#4ade80;border:1px solid #1a5a2a;">✅ ¡Cuenta creada! Ya puedes iniciar sesión. Tienes 10 descargas gratis disponibles.</div>
+    {% endif %}
     {% if expired %}
     <div class="alert alert-amber">⚠ Tu suscripción ha expirado. Contacta al administrador.</div>
     {% endif %}

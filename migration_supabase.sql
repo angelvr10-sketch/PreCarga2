@@ -6,14 +6,18 @@
 -- Desactivar Row Level Security (RLS) para todas las tablas
 -- (la app se encarga de la seguridad)
 
+-- AGREGAR columna descargas_usadas si no existe (para tablas ya creadas)
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS descargas_usadas INTEGER NOT NULL DEFAULT 0;
+
 -- Tabla: usuarios
 CREATE TABLE IF NOT EXISTS usuarios (
-    id        SERIAL PRIMARY KEY,
-    username  TEXT UNIQUE NOT NULL,
-    password  TEXT NOT NULL,
-    rol       TEXT NOT NULL DEFAULT 'usuario',
-    activo    BOOLEAN NOT NULL DEFAULT true,
-    creado    TEXT NOT NULL
+    id                SERIAL PRIMARY KEY,
+    username          TEXT UNIQUE NOT NULL,
+    password          TEXT NOT NULL,
+    rol               TEXT NOT NULL DEFAULT 'usuario',
+    activo            BOOLEAN NOT NULL DEFAULT true,
+    descargas_usadas  INTEGER NOT NULL DEFAULT 0,
+    creado            TEXT NOT NULL
 );
 ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow all" ON usuarios FOR ALL USING (true);
