@@ -134,8 +134,11 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
     # Obtener session_id o payment_intent_id
     session_id = data_object.get("id")
     payment_intent = data_object.get("payment_intent")
-    usuario_id = data_object.get("metadata", {}).get("usuario_id")
+    metadata = data_object.get("metadata", {})
+    usuario_id = metadata.get("usuario_id") if isinstance(metadata, dict) else None
     payment_status = data_object.get("payment_status", "")
+
+    print(f"DEBUG procesar_evento: session_id={session_id}, usuario_id={usuario_id}, event_type={event_type}")
 
     if not usuario_id:
         # Intentar buscar por session_id
@@ -146,12 +149,16 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
             ).fetchone()
             if row:
                 usuario_id = str(row["usuario_id"])
+                print(f"DEBUG: usuario_id encontrado en DB: {usuario_id}")
             else:
+                print(f"DEBUG: usuario_id NO encontrado en DB para session {session_id}")
                 return False
 
     usuario_id = int(usuario_id)
     ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     monto = data_object.get("amount_total", STRIPE_PRICE) / 100
+
+    print(f"DEBUG: Procesando pago para usuario_id={usuario_id}, dias={STRIPE_DAYS}")
 
     with auth_conn() as con:
         existing = con.execute(
@@ -161,6 +168,7 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
 
         if existing:
             if existing["estado"] == "approved":
+                print(f"DEBUG: Pago ya aprobado, saltando")
                 return True  # Ya procesado
 
             con.execute(
@@ -169,6 +177,7 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
                     WHERE id = ?""",
                 ("approved", ahora, payment_intent, monto, existing["id"])
             )
+            print(f"DEBUG: Registro de pago actualizado a approved")
         else:
             # Crear registro si no existe
             con.execute(
@@ -178,9 +187,12 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
                 (usuario_id, session_id, payment_intent, monto, STRIPE_DAYS,
                  ahora, ahora)
             )
+            print(f"DEBUG: Nuevo registro de pago creado")
 
         # Agregar dias de suscripcion
+        print(f"DEBUG: Llamando agregar_dias({usuario_id}, {STRIPE_DAYS})")
         agregar_dias(usuario_id, STRIPE_DAYS)
+        print(f"DEBUG: Suscripcion agregada exitosamente")
 
     return True
 
@@ -192,6 +204,8 @@ def obtener_info_sesion(session_id: str) -> Optional[Dict[str, Any]]:
 
     try:
         session = stripe.checkout.Session.retrieve(session_id)
+        # Convertir metadata a dict plano
+        metadata = dict(session.metadata) if session.metadata else {}
         return {
             "id": session.id,
             "payment_status": session.payment_status,
@@ -199,7 +213,7 @@ def obtener_info_sesion(session_id: str) -> Optional[Dict[str, Any]]:
             "payment_intent": session.payment_intent,
             "amount_total": session.amount_total,
             "customer_email": session.customer_email,
-            "metadata": session.metadata,
+            "metadata": metadata,
         }
     except Exception as e:
         print(f"Error obteniendo sesion de Stripe: {e}")
