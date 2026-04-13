@@ -163,11 +163,17 @@ async def stripe_success(request: Request, session_id: str = None):
                 print(f"DEBUG success: Pago aún no confirmado, payment_status=unpaid")
 
             else:
-                # Intentar procesar de todos modos
-                print(f"DEBUG success: payment_status desconocido, intentando procesar")
-                event = {"type": "checkout.session.completed", "data": {"object": payment_info if payment_info else {"id": session_id}}}
-                procesar_evento_pago(event)
-                approved = payment_info.get("payment_status") == "paid" if payment_info else False
+                # No pudimos obtener info de Stripe, pero intentamos procesar
+                # usando el registro que ya creamos en la DB
+                print(f"DEBUG success: payment_status desconocido o info no disponible, intentando procesar")
+                fake_info = {"id": session_id, "payment_status": "unknown", "amount_total": STRIPE_PRICE, "metadata": {}}
+                event = {"type": "checkout.session.completed", "data": {"object": fake_info}}
+                result = procesar_evento_pago(event)
+                if result:
+                    approved = True
+                    print(f"DEBUG success: Pago procesado exitosamente desde DB fallback")
+                else:
+                    approved = False
 
         except Exception as e:
             import traceback
@@ -181,6 +187,7 @@ async def stripe_success(request: Request, session_id: str = None):
         "session_id": session_id,
         "payment_info": payment_info,
         "approved": approved,
+        "plan_dias": STRIPE_DAYS,
     })
 
 

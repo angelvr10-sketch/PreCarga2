@@ -203,8 +203,12 @@
     <div class="info-box">
       <p>
         <i class="bi bi-calendar-check"></i>
-        <strong>7 dias</strong> de suscripcion agregados a tu cuenta.
+        <strong>{{ plan_dias }} días</strong> de suscripción agregados a tu cuenta.
         <br>
+        {% if user.expira %}
+        Tu nueva fecha de expiración: <strong>{{ user.expira }}</strong>
+        {% endif %}
+        <br><br>
         <a href="/dashboard" style="color: #1e40af; font-weight: 600;">Ir al Dashboard →</a>
       </p>
     </div>
