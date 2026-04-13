@@ -92,15 +92,16 @@ def login(username: str, password: str) -> Optional[str]:
 
     user = rows[0]
 
-    # Verificar suscripcion vigente
+    # Verificar suscripcion vigente (opcional - usuarios sin suscripcion pueden entrar en modo gratis)
     hoy = date.today().strftime("%Y-%m-%d")
     sus = _get("suscripciones", filters={
         "usuario_id": f"eq.{user['id']}",
         "expira": f"gte.{hoy}"
     }, order="expira.desc", limit=1)
 
-    if not sus:
-        return None  # sin suscripcion o expirada
+    # Permitir login aunque no tenga suscripcion (modo gratuito con descargas)
+    # if not sus:
+    #     return None  # sin suscripcion o expirada
 
     # Crear sesion (24h)
     token = _token()
@@ -308,8 +309,9 @@ def require_login(request: Request) -> Optional[RedirectResponse]:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
-    if not suscripcion_vigente(user):
-        return RedirectResponse("/login?expired=1", status_code=303)
+    # Permitir acceso aunque no tenga suscripcion (modo gratuito)
+    # if not suscripcion_vigente(user):
+    #     return RedirectResponse("/login?expired=1", status_code=303)
     return None
 
 
