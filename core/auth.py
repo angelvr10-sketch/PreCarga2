@@ -1,70 +1,18 @@
-"""core/auth.py — Usuarios, sesiones y suscripciones con SQLite"""
-import sqlite3
+"""core/auth.py — Usuarios, sesiones y suscripciones con Supabase"""
 import hashlib
 import secrets
 import os
 from datetime import datetime, date, timedelta
-from pathlib import Path
 from functools import wraps
 from typing import Optional
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse
 
-DB_PATH = Path("data/usuarios.db")
-
-
-# ──────────────────────────────────────────────────────────────
-#  Conexión y esquema
-# ──────────────────────────────────────────────────────────────
-
-def _conn():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(DB_PATH)
-    con.row_factory = sqlite3.Row
-    return con
-
-
-def init_db():
-    """Crea las tablas si no existen y el admin por defecto."""
-    with _conn() as con:
-        con.executescript("""
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            username  TEXT UNIQUE NOT NULL,
-            password  TEXT NOT NULL,
-            rol       TEXT NOT NULL DEFAULT 'usuario',
-            activo    INTEGER NOT NULL DEFAULT 1,
-            creado    TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS suscripciones (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
-            expira     TEXT NOT NULL,
-            creado     TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS sesiones (
-            token      TEXT PRIMARY KEY,
-            usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
-            expira     TEXT NOT NULL
-        );
-        """)
-
-        # Admin por defecto si no existe
-        existe = con.execute(
-            "SELECT id FROM usuarios WHERE username = 'admin'"
-        ).fetchone()
-        if not existe:
-            con.execute(
-                "INSERT INTO usuarios (username, password, rol, activo, creado) VALUES (?,?,?,1,?)",
-                ("admin", _hash("admin123"), "admin", _now())
-            )
-            # Suscripción de 3650 días para el admin
-            uid = con.execute("SELECT id FROM usuarios WHERE username='admin'").fetchone()["id"]
-            con.execute(
-                "INSERT INTO suscripciones (usuario_id, expira, creado) VALUES (?,?,?)",
-                (uid, _fecha_expira(3650), _now())
-            )
+from core.supabase_db import (
+    _get, _post, _delete, _patch, verificar_conexion, _now,
+    HAS_HTTPX, httpx
+)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -73,10 +21,6 @@ def init_db():
 
 def _hash(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
-
-
-def _now() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _fecha_expira(dias: int) -> str:
@@ -88,65 +32,115 @@ def _token() -> str:
 
 
 # ──────────────────────────────────────────────────────────────
-#  Autenticación
+#  Inicializacion
+# ──────────────────────────────────────────────────────────────
+
+def init_db():
+    """Verifica conexion y crea admin por defecto si no existe."""
+    if not HAS_HTTPX:
+        raise RuntimeError("httpx no esta instalado. pip install httpx")
+
+    # Verificar que Supabase esta configurado
+    if not verificar_conexion():
+        print("WARNING: No se pudo conectar a Supabase. Verifica SUPABASE_URL y SUPABASE_KEY")
+        return
+
+    # Crear admin por defecto si no existe
+    existing = _get("usuarios", filters={"username": "eq.admin"})
+    if not existing:
+        _post("usuarios", {
+            "username": "admin",
+            "password": _hash("admin123"),
+            "rol": "admin",
+            "activo": True,
+            "creado": _now()
+        })
+        # Suscripcion de 3650 dias para el admin
+        admin_row = _get("usuarios", filters={"username": "eq.admin"})
+        if admin_row:
+            uid = admin_row[0]["id"]
+            _post("suscripciones", {
+                "usuario_id": uid,
+                "expira": _fecha_expira(3650),
+                "creado": _now()
+            })
+        print("Admin creado por defecto: admin / admin123")
+    else:
+        print("Conexion a Supabase exitosa")
+
+
+# ──────────────────────────────────────────────────────────────
+#  Autenticacion
 # ──────────────────────────────────────────────────────────────
 
 def login(username: str, password: str) -> Optional[str]:
     """
-    Verifica credenciales y suscripción activa.
-    Devuelve token de sesión o None.
+    Verifica credenciales y suscripcion activa.
+    Devuelve token de sesion o None.
     """
-    with _conn() as con:
-        user = con.execute(
-            "SELECT * FROM usuarios WHERE username=? AND password=? AND activo=1",
-            (username.strip(), _hash(password))
-        ).fetchone()
+    # Buscar usuario
+    rows = _get("usuarios", filters={
+        "username": f"eq.{username.strip()}",
+        "password": f"eq.{_hash(password)}",
+        "activo": "eq.true"
+    })
+    if not rows:
+        return None
 
-        if not user:
-            return None
+    user = rows[0]
 
-        # Verificar suscripción vigente
-        hoy = date.today().strftime("%Y-%m-%d")
-        sus = con.execute(
-            "SELECT expira FROM suscripciones WHERE usuario_id=? AND expira >= ? ORDER BY expira DESC LIMIT 1",
-            (user["id"], hoy)
-        ).fetchone()
+    # Verificar suscripcion vigente
+    hoy = date.today().strftime("%Y-%m-%d")
+    sus = _get("suscripciones", filters={
+        "usuario_id": f"eq.{user['id']}",
+        "expira": f"gte.{hoy}"
+    }, order="expira.desc", limit=1)
 
-        if not sus:
-            return None  # sin suscripción o expirada
+    if not sus:
+        return None  # sin suscripcion o expirada
 
-        # Crear sesión (24h)
-        token  = _token()
-        expira = (datetime.now() + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
-        con.execute(
-            "INSERT INTO sesiones (token, usuario_id, expira) VALUES (?,?,?)",
-            (token, user["id"], expira)
-        )
-        return token
+    # Crear sesion (24h)
+    token = _token()
+    expira = (datetime.now() + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+    _post("sesiones", {"token": token, "usuario_id": user["id"], "expira": expira})
+    return token
 
 
 def logout(token: str):
-    with _conn() as con:
-        con.execute("DELETE FROM sesiones WHERE token=?", (token,))
+    _delete("sesiones", {"token": f"eq.{token}"})
 
 
 def get_user_from_token(token: Optional[str]) -> Optional[dict]:
-    """Devuelve dict del usuario o None si el token es inválido/expirado."""
+    """Devuelve dict del usuario o None si el token es invalido/expirado."""
     if not token:
         return None
+
     ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with _conn() as con:
-        row = con.execute("""
-            SELECT u.id, u.username, u.rol,
-                   (SELECT expira FROM suscripciones
-                    WHERE usuario_id=u.id ORDER BY expira DESC LIMIT 1) AS expira
-            FROM sesiones s
-            JOIN usuarios u ON u.id = s.usuario_id
-            WHERE s.token=? AND s.expira > ?
-        """, (token, ahora)).fetchone()
-    if not row:
+
+    # Obtener sesion valida
+    sesiones = _get("sesiones", filters={
+        "token": f"eq.{token}",
+        "expira": f"gt.{ahora}"
+    }, select="usuario_id")
+
+    if not sesiones:
         return None
-    return dict(row)
+
+    uid = sesiones[0]["usuario_id"]
+
+    # Obtener usuario con su suscripcion
+    rows = _get("usuarios", filters={"id": f"eq.{uid}"}, select="id,username,rol")
+    if not rows:
+        return None
+
+    user = rows[0]
+
+    # Obtener fecha de expiracion
+    sus = _get("suscripciones", filters={"usuario_id": f"eq.{uid}"},
+               select="expira", order="expira.desc", limit=1)
+    user["expira"] = sus[0]["expira"] if sus else None
+
+    return user
 
 
 def suscripcion_vigente(user: dict) -> bool:
@@ -170,73 +164,84 @@ def registrar(username: str, password: str, dias: int = 0, rol: str = "usuario")
     if len(username) < 3:
         return False, "El usuario debe tener al menos 3 caracteres"
     if len(password) < 6:
-        return False, "La contraseña debe tener al menos 6 caracteres"
+        return False, "La contrasena debe tener al menos 6 caracteres"
     try:
-        with _conn() as con:
-            con.execute(
-                "INSERT INTO usuarios (username, password, rol, activo, creado) VALUES (?,?,?,1,?)",
-                (username.strip(), _hash(password), rol, _now())
-            )
-            if dias > 0:
-                uid = con.execute("SELECT id FROM usuarios WHERE username=?", (username,)).fetchone()["id"]
-                con.execute(
-                    "INSERT INTO suscripciones (usuario_id, expira, creado) VALUES (?,?,?)",
-                    (uid, _fecha_expira(dias), _now())
-                )
+        existing = _get("usuarios", filters={"username": f"eq.{username.strip()}"})
+        if existing:
+            return False, "Ese nombre de usuario ya existe"
+
+        _post("usuarios", {
+            "username": username.strip(),
+            "password": _hash(password),
+            "rol": rol,
+            "activo": True,
+            "creado": _now()
+        })
+
+        if dias > 0:
+            uid_row = _get("usuarios", filters={"username": f"eq.{username.strip()}"})
+            if uid_row:
+                uid = uid_row[0]["id"]
+                _post("suscripciones", {
+                    "usuario_id": uid,
+                    "expira": _fecha_expira(dias),
+                    "creado": _now()
+                })
         return True, "Usuario creado correctamente"
-    except sqlite3.IntegrityError:
-        return False, "Ese nombre de usuario ya existe"
+    except Exception as e:
+        return False, f"Error creando usuario: {e}"
 
 
 # ──────────────────────────────────────────────────────────────
-#  Admin: gestión de usuarios
+#  Admin: gestion de usuarios
 # ──────────────────────────────────────────────────────────────
 
 def listar_usuarios() -> list[dict]:
-    with _conn() as con:
-        rows = con.execute("""
-            SELECT u.id, u.username, u.rol, u.activo, u.creado,
-                   (SELECT expira FROM suscripciones
-                    WHERE usuario_id=u.id ORDER BY expira DESC LIMIT 1) AS expira
-            FROM usuarios u ORDER BY u.creado DESC
-        """).fetchall()
-    return [dict(r) for r in rows]
+    rows = _get("usuarios", select="id,username,rol,activo,creado", order="creado.desc")
+    result = [dict(r) for r in rows]
+
+    # Agregar fecha de expiracion
+    for user in result:
+        sus = _get("suscripciones", filters={"usuario_id": f"eq.{user['id']}"},
+                   select="expira", order="expira.desc", limit=1)
+        user["expira"] = sus[0]["expira"] if sus else None
+
+    return result
 
 
 def eliminar_usuario(uid: int):
-    with _conn() as con:
-        con.execute("DELETE FROM sesiones WHERE usuario_id=?", (uid,))
-        con.execute("DELETE FROM suscripciones WHERE usuario_id=?", (uid,))
-        con.execute("DELETE FROM usuarios WHERE id=?", (uid,))
+    _delete("sesiones", {"usuario_id": f"eq.{uid}"})
+    _delete("suscripciones", {"usuario_id": f"eq.{uid}"})
+    _delete("usuarios", {"id": f"eq.{uid}"})
 
 
 def agregar_dias(uid: int, dias: int):
-    """Extiende o crea suscripción para el usuario."""
-    with _conn() as con:
-        actual = con.execute(
-            "SELECT expira FROM suscripciones WHERE usuario_id=? ORDER BY expira DESC LIMIT 1",
-            (uid,)
-        ).fetchone()
+    """Extiende o crea suscripcion para el usuario."""
+    # Obtener suscripcion actual
+    actual = _get("suscripciones", filters={"usuario_id": f"eq.{uid}"},
+                  select="expira", order="expira.desc", limit=1)
 
-        hoy = date.today()
-        if actual and actual["expira"] >= hoy.strftime("%Y-%m-%d"):
-            base = datetime.strptime(actual["expira"], "%Y-%m-%d").date()
-        else:
-            base = hoy
+    hoy = date.today()
+    if actual and actual[0]["expira"] >= hoy.strftime("%Y-%m-%d"):
+        base = datetime.strptime(actual[0]["expira"], "%Y-%m-%d").date()
+    else:
+        base = hoy
 
-        nueva_expira = (base + timedelta(days=dias)).strftime("%Y-%m-%d")
-        con.execute(
-            "INSERT INTO suscripciones (usuario_id, expira, creado) VALUES (?,?,?)",
-            (uid, nueva_expira, _now())
-        )
+    nueva_expira = (base + timedelta(days=dias)).strftime("%Y-%m-%d")
+    _post("suscripciones", {
+        "usuario_id": uid,
+        "expira": nueva_expira,
+        "creado": _now()
+    })
 
 
 def toggle_activo(uid: int):
-    with _conn() as con:
-        con.execute(
-            "UPDATE usuarios SET activo = CASE WHEN activo=1 THEN 0 ELSE 1 END WHERE id=?",
-            (uid,)
-        )
+    # Obtener estado actual
+    rows = _get("usuarios", filters={"id": f"eq.{uid}"}, select="activo")
+    if not rows:
+        return
+    nuevo_estado = not rows[0]["activo"]
+    _patch("usuarios", {"activo": nuevo_estado}, {"id": f"eq.{uid}"})
 
 
 # ──────────────────────────────────────────────────────────────
@@ -249,7 +254,7 @@ def get_current_user(request: Request) -> Optional[dict]:
 
 
 def require_login(request: Request) -> Optional[RedirectResponse]:
-    """Devuelve RedirectResponse si no está autenticado, None si sí."""
+    """Devuelve RedirectResponse si no esta autenticado, None si si."""
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)

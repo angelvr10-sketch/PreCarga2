@@ -11,7 +11,8 @@ except ImportError:
     HAS_STRIPE = False
     stripe = None
 
-from core.auth import agregar_dias, _conn as auth_conn
+from core.auth import agregar_dias
+from core.supabase_db import _get, _post, _patch, verificar_conexion
 
 # Configuracion de Stripe
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
@@ -29,25 +30,12 @@ if HAS_STRIPE and STRIPE_SECRET_KEY:
 
 
 def init_stripe_payments_db():
-    """Crea la tabla de pagos_stripe si no existe"""
-    with auth_conn() as con:
-        con.executescript("""
-        CREATE TABLE IF NOT EXISTS pagos_stripe (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
-            stripe_session_id TEXT UNIQUE,
-            stripe_payment_id TEXT,
-            estado TEXT NOT NULL DEFAULT 'pending',
-            monto REAL,
-            dias_comprados INTEGER DEFAULT 7,
-            creado TEXT NOT NULL,
-            actualizado TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_stripe_usuario ON pagos_stripe(usuario_id);
-        CREATE INDEX IF NOT EXISTS idx_stripe_session ON pagos_stripe(stripe_session_id);
-        CREATE INDEX IF NOT EXISTS idx_stripe_payment ON pagos_stripe(stripe_payment_id);
-        CREATE INDEX IF NOT EXISTS idx_stripe_estado ON pagos_stripe(estado);
-        """)
+    """Verifica que la tabla pagos_stripe existe en Supabase."""
+    try:
+        _get("pagos_stripe", select="id", limit=1)
+        print("Tabla pagos_stripe verificada en Supabase")
+    except Exception as e:
+        print(f"WARNING: No se pudo verificar la tabla pagos_stripe en Supabase: {e}")
 
 
 def crear_checkout_session(usuario_id: int, username: str) -> Dict[str, Any]:
@@ -91,14 +79,15 @@ def crear_checkout_session(usuario_id: int, username: str) -> Dict[str, Any]:
 
     ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    with auth_conn() as con:
-        con.execute(
-            """INSERT INTO pagos_stripe (usuario_id, stripe_session_id, estado, monto,
-                dias_comprados, creado, actualizado)
-                VALUES (?, ?, 'pending', ?, ?, ?, ?)""",
-            (usuario_id, session.id, STRIPE_PRICE / 100, STRIPE_DAYS,
-             ahora, ahora)
-        )
+    _post("pagos_stripe", {
+        "usuario_id": usuario_id,
+        "stripe_session_id": session.id,
+        "estado": "pending",
+        "monto": STRIPE_PRICE / 100,
+        "dias_comprados": STRIPE_DAYS,
+        "creado": ahora,
+        "actualizado": ahora,
+    })
 
     return {
         "id": session.id,
@@ -141,18 +130,15 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
     print(f"DEBUG procesar_evento: session_id={session_id}, usuario_id={usuario_id}, event_type={event_type}")
 
     if not usuario_id:
-        # Intentar buscar por session_id
-        with auth_conn() as con:
-            row = con.execute(
-                "SELECT usuario_id FROM pagos_stripe WHERE stripe_session_id = ?",
-                (session_id,)
-            ).fetchone()
-            if row:
-                usuario_id = str(row["usuario_id"])
-                print(f"DEBUG: usuario_id encontrado en DB: {usuario_id}")
-            else:
-                print(f"DEBUG: usuario_id NO encontrado en DB para session {session_id}")
-                return False
+        # Intentar buscar por session_id en Supabase
+        rows = _get("pagos_stripe", filters={"stripe_session_id": f"eq.{session_id}"},
+                    select="usuario_id")
+        if rows:
+            usuario_id = str(rows[0]["usuario_id"])
+            print(f"DEBUG: usuario_id encontrado en DB: {usuario_id}")
+        else:
+            print(f"DEBUG: usuario_id NO encontrado en DB para session {session_id}")
+            return False
 
     usuario_id = int(usuario_id)
     ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -160,36 +146,34 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
 
     print(f"DEBUG: Procesando pago para usuario_id={usuario_id}, dias={STRIPE_DAYS}")
 
-    with auth_conn() as con:
-        existing = con.execute(
-            "SELECT id, estado FROM pagos_stripe WHERE stripe_session_id = ?",
-            (session_id,)
-        ).fetchone()
+    # Buscar registro existente
+    existing = _get("pagos_stripe", filters={"stripe_session_id": f"eq.{session_id}"},
+                    select="id,estado")
 
-        if existing:
-            if existing["estado"] == "approved":
-                print(f"DEBUG: Pago ya aprobado, saltando")
-                return True  # Ya procesado
+    if existing:
+        if existing[0]["estado"] == "approved":
+            print(f"DEBUG: Pago ya aprobado, saltando")
+            return True  # Ya procesado
 
-            con.execute(
-                """UPDATE pagos_stripe
-                    SET estado = ?, actualizado = ?, stripe_payment_id = ?, monto = ?
-                    WHERE id = ?""",
-                ("approved", ahora, payment_intent, monto, existing["id"])
-            )
-            print(f"DEBUG: Registro de pago actualizado a approved")
-        else:
-            # Crear registro si no existe
-            con.execute(
-                """INSERT INTO pagos_stripe (usuario_id, stripe_session_id, stripe_payment_id,
-                    estado, monto, dias_comprados, creado, actualizado)
-                    VALUES (?, ?, ?, 'approved', ?, ?, ?, ?)""",
-                (usuario_id, session_id, payment_intent, monto, STRIPE_DAYS,
-                 ahora, ahora)
-            )
-            print(f"DEBUG: Nuevo registro de pago creado")
+        _patch("pagos_stripe",
+               {"estado": "approved", "actualizado": ahora, "stripe_payment_id": payment_intent, "monto": monto},
+               {"id": f"eq.{existing[0]['id']}"})
+        print(f"DEBUG: Registro de pago actualizado a approved")
+    else:
+        # Crear registro si no existe
+        _post("pagos_stripe", {
+            "usuario_id": usuario_id,
+            "stripe_session_id": session_id,
+            "stripe_payment_id": payment_intent,
+            "estado": "approved",
+            "monto": monto,
+            "dias_comprados": STRIPE_DAYS,
+            "creado": ahora,
+            "actualizado": ahora,
+        })
+        print(f"DEBUG: Nuevo registro de pago creado")
 
-    # Agregar dias de suscripcion FUERA del with para evitar database locked
+    # Agregar dias de suscripcion
     print(f"DEBUG: Llamando agregar_dias({usuario_id}, {STRIPE_DAYS})")
     agregar_dias(usuario_id, STRIPE_DAYS)
     print(f"DEBUG: Suscripcion agregada exitosamente")
@@ -227,12 +211,6 @@ def verificar_configuracion_stripe() -> bool:
 
 def obtener_pagos_stripe_usuario(usuario_id: int, limit: int = 10) -> list:
     """Obtiene el historial de pagos con Stripe de un usuario"""
-    with auth_conn() as con:
-        rows = con.execute(
-            """SELECT * FROM pagos_stripe
-                WHERE usuario_id = ?
-                ORDER BY creado DESC
-                LIMIT ?""",
-            (usuario_id, limit)
-        ).fetchall()
+    rows = _get("pagos_stripe", filters={"usuario_id": f"eq.{usuario_id}"},
+                order="creado.desc", limit=limit)
     return [dict(r) for r in rows]
