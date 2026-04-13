@@ -35,7 +35,6 @@ from routers import auth as auth_router
 from routers import payments as payments_router
 from core.auth import init_db
 from core.db import init_solicitudes_db
-from core.payments import init_payments_db
 from core.stripe import init_stripe_payments_db
 
 app = FastAPI(title="Precarga SHAT", version="0.3-web", docs_url=None)
@@ -45,7 +44,6 @@ app = FastAPI(title="Precarga SHAT", version="0.3-web", docs_url=None)
 def startup():
     init_db()
     init_solicitudes_db()
-    init_payments_db()
     init_stripe_payments_db()
 
 # ── Middleware ────────────────────────────────────────────────
