@@ -15,13 +15,15 @@ Abrir: http://localhost:8000
 """
 import os, sys
 from pathlib import Path
-from dotenv import load_dotenv
 
-# Cargar variables de entorno desde .env
-load_dotenv()
+_root = Path(__file__).resolve().parent
+
+# Cargar variables de entorno desde .env lo primero de todo
+# Aseguramos que se carga desde la raíz del proyecto
+from dotenv import load_dotenv
+load_dotenv(dotenv_path=_root / ".env")
 
 # Garantizar que el directorio del proyecto esté en sys.path
-_root = Path(__file__).resolve().parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 os.chdir(_root)

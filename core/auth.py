@@ -2,7 +2,9 @@
 import hashlib
 import secrets
 import os
-from datetime import datetime, date, timedelta
+import random
+import re
+from datetime import datetime, date, timedelta, timezone
 from functools import wraps
 from typing import Optional
 
@@ -16,6 +18,20 @@ from core.supabase_db import (
 
 # Constante para descargas gratis
 MAX_DESCARGAS_GRATIS = 10
+
+# Configuracion de email (debe estar en .env)
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USER)
+
+# Rate limiting: max 3 registros por IP en 24h
+MAX_REGISTROS_POR_IP = 3
+VENTANA_RATE_LIMIT_HORAS = 24
+
+# Validacion de email
+EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 
 
 # ──────────────────────────────────────────────────────────────
@@ -32,6 +48,19 @@ def _fecha_expira(dias: int) -> str:
 
 def _token() -> str:
     return secrets.token_hex(32)
+
+
+def _codigo_verificacion() -> str:
+    """Genera código de 6 dígitos para verificación de email."""
+    return ''.join(random.choices('0123456789', k=6))
+
+
+def _ip_from_request(request: Request) -> str:
+    """Extrae la IP real del request, considerando proxies."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 # ──────────────────────────────────────────────────────────────
@@ -76,17 +105,30 @@ def init_db():
 #  Autenticacion
 # ──────────────────────────────────────────────────────────────
 
-def login(username: str, password: str) -> Optional[str]:
+def login(username_or_email: str, password: str) -> Optional[str]:
     """
     Verifica credenciales y suscripcion activa.
+    Acepta username o email como identificador.
     Devuelve token de sesion o None.
     """
-    # Buscar usuario
+    entrada = username_or_email.strip()
+    password_hash = _hash(password)
+
+    # Intentar buscar por username
     rows = _get("usuarios", filters={
-        "username": f"eq.{username.strip()}",
-        "password": f"eq.{_hash(password)}",
+        "username": f"eq.{entrada}",
+        "password": f"eq.{password_hash}",
         "activo": "eq.true"
     })
+
+    # Si no encuentra, buscar por email
+    if not rows:
+        rows = _get("usuarios", filters={
+            "email": f"eq.{entrada.lower()}",
+            "password": f"eq.{password_hash}",
+            "activo": "eq.true"
+        })
+
     if not rows:
         return None
 
@@ -105,7 +147,7 @@ def login(username: str, password: str) -> Optional[str]:
 
     # Crear sesion (24h)
     token = _token()
-    expira = (datetime.now() + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+    expira = (datetime.now(timezone.utc) + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
     _post("sesiones", {"token": token, "usuario_id": user["id"], "expira": expira})
     return token
 
@@ -119,7 +161,7 @@ def get_user_from_token(token: Optional[str]) -> Optional[dict]:
     if not token:
         return None
 
-    ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ahora = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
     # Obtener sesion valida
     sesiones = _get("sesiones", filters={
@@ -206,11 +248,280 @@ def reset_descargas(usuario_id: int):
 
 
 # ──────────────────────────────────────────────────────────────
-#  Registro
+#  Rate Limiting (anti-abuso de registro)
+# ──────────────────────────────────────────────────────────────
+
+def _limpiar_registros_antiguos(ip: str):
+    """Elimina registros de rate limiting antiguos de la IP."""
+    try:
+        hace_24h = (datetime.now(timezone.utc) - timedelta(hours=VENTANA_RATE_LIMIT_HORAS)).strftime("%Y-%m-%d %H:%M:%S")
+        registros = _get("rate_limit_registros", filters={
+            "ip": f"eq.{ip}",
+            "creado": f"lt.{hace_24h}"
+        })
+        for r in registros:
+            _delete("rate_limit_registros", {"id": f"eq.{r['id']}"})
+    except Exception:
+        pass  # Ignorar errores de limpieza
+
+
+def _contar_registros_recientes(ip: str) -> int:
+    """Cuenta cuántos registros ha hecho esta IP en las últimas 24h."""
+    try:
+        hace_24h = (datetime.now(timezone.utc) - timedelta(hours=VENTANA_RATE_LIMIT_HORAS)).strftime("%Y-%m-%d %H:%M:%S")
+        registros = _get("rate_limit_registros", filters={
+            "ip": f"eq.{ip}",
+            "creado": f"gte.{hace_24h}"
+        })
+        return len(registros)
+    except Exception:
+        return 0
+
+
+def _registrar_intento(ip: str):
+    """Registra un intento de registro desde esta IP."""
+    try:
+        _post("rate_limit_registros", {
+            "ip": ip,
+            "creado": _now()
+        })
+    except Exception:
+        pass  # No bloquear registro por error de rate limiting
+
+
+# ──────────────────────────────────────────────────────────────
+#  Email
+# ──────────────────────────────────────────────────────────────
+
+def enviar_email(to: str, subject: str, body: str) -> bool:
+    """Envia email usando SMTP configurado."""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    # Debugging: Print SMTP credentials being used (masked password)
+    print(f"SMTP Config: Host={SMTP_HOST}, Port={SMTP_PORT}, User={SMTP_USER}, From={FROM_EMAIL}")
+    print(f"SMTP Password: {'*' * len(SMTP_PASSWORD) if SMTP_PASSWORD else 'None'}")
+
+    if not SMTP_USER or not SMTP_PASSWORD:
+        # Modo desarrollo: imprimir a consola
+        print(f"\n[EMAIL SIMULADO - DESARROLLO]")
+        print(f"Para: {to}")
+        print(f"Asunto: {subject}")
+        print(f"Cuerpo:\n{body}")
+        print(f"{'='*50}\n")
+        return True
+
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = FROM_EMAIL
+        msg['To'] = to
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+
+        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"Error de autenticación SMTP (credenciales incorrectas): {e}")
+        return False
+    except smtplib.SMTPConnectError as e:
+        print(f"Error de conexión SMTP (servidor no accesible o puerto incorrecto): {e}")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"Error general SMTP: {e}")
+        return False
+    except Exception as e:
+        print(f"Error inesperado al enviar email: {e}")
+        return False
+
+
+def enviar_codigo_verificacion(email: str, codigo: str) -> bool:
+    """Envia el código de verificación al email del usuario."""
+    subject = "Código de verificación - Precarga SHAT"
+    body = f"""
+Hola,
+
+Tu código de verificación para completar el registro es:
+
+    {codigo}
+
+Este código expira en 30 minutos.
+
+Si no solicitaste este registro, ignora este mensaje.
+
+---
+Precarga SHAT
+"""
+    return enviar_email(email, subject, body)
+
+
+# ──────────────────────────────────────────────────────────────
+#  Registro con verificación por email
+# ──────────────────────────────────────────────────────────────
+
+def registrar_enviar_codigo(email: str, username: str, password: str, ip: str) -> tuple[bool, str]:
+    """
+    Inicia el proceso de registro enviando un código de verificación al email.
+    Guarda los datos temporalmente hasta que se verifique.
+    """
+    # Validaciones
+    if not EMAIL_REGEX.match(email):
+        return False, "El email no tiene un formato válido"
+    if len(username) < 3:
+        return False, "El usuario debe tener al menos 3 caracteres"
+    if len(password) < 6:
+        return False, "La contraseña debe tener al menos 6 caracteres"
+
+    # Validar que username no exista
+    existing = _get("usuarios", filters={"username": f"eq.{username.strip()}"})
+    if existing:
+        return False, "Ese nombre de usuario ya existe"
+
+    # Validar que email no exista
+    existing_email = _get("usuarios", filters={"email": f"eq.{email.strip().lower()}"})
+    if existing_email:
+        return False, "Ya existe una cuenta con ese email"
+
+    # Rate limiting por IP
+    _limpiar_registros_antiguos(ip)
+    intentos = _contar_registros_recientes(ip)
+    if intentos >= MAX_REGISTROS_POR_IP:
+        return False, f"Demasiados intentos de registro. Intenta de nuevo en {VENTANA_RATE_LIMIT_HORAS} horas."
+
+    # Generar código de verificación
+    codigo = _codigo_verificacion()
+    expira = (datetime.now(timezone.utc) + timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
+
+    # Guardar en tabla temporal (o actualizar si ya existe)
+    try:
+        # Verificar si ya hay un código pendiente para este email
+        pendiente = _get("verificaciones_pendientes", filters={"email": f"eq.{email.strip().lower()}"})
+        if pendiente:
+            # Actualizar código existente
+            _patch("verificaciones_pendientes", {
+                "codigo": codigo,
+                "expira": expira,
+                "username": username.strip(),
+                "password_hash": _hash(password),
+                "ip": ip,
+                "creado": _now()
+            }, {"email": f"eq.{email.strip().lower()}"})
+        else:
+            # Crear nuevo
+            _post("verificaciones_pendientes", {
+                "email": email.strip().lower(),
+                "username": username.strip(),
+                "password_hash": _hash(password),
+                "codigo": codigo,
+                "expira": expira,
+                "ip": ip,
+                "creado": _now()
+            })
+    except Exception as e:
+        return False, f"Error guardando verificación: {e}"
+
+    # Enviar email
+    if enviar_codigo_verificacion(email, codigo):
+        _registrar_intento(ip)
+        return True, "Código de verificación enviado. Revisa tu email."
+    else:
+        return False, "Error enviando el email. Intenta de nuevo más tarde."
+
+
+def verificar_codigo_y_crear_cuenta(email: str, codigo: str) -> tuple[bool, str]:
+    """
+    Verifica el código e inserta el usuario real en la BD.
+    """
+    email_norm = email.strip().lower()
+    codigo_norm = codigo.strip()
+
+    # Buscar verificación pendiente
+    try:
+        pendiente = _get("verificaciones_pendientes", filters={
+            "email": f"eq.{email_norm}",
+            "codigo": f"eq.{codigo_norm}"
+        })
+
+        if not pendiente:
+            return False, "Código incorrecto o email no encontrado"
+
+        ver = pendiente[0]
+
+        # Verificar expiración
+        ahora = datetime.now(timezone.utc)
+        expira_str = ver["expira"]
+        # Asegurar que el timestamp tenga timezone UTC
+        if expira_str and "+" not in expira_str and "T" not in expira_str:
+            expira_str = expira_str + "+00:00"
+        expira = datetime.fromisoformat(expira_str)
+        # Convertir a UTC si tiene timezone, o asumir UTC si es naive
+        if expira.tzinfo is None:
+            expira = expira.replace(tzinfo=timezone.utc)
+        if ahora > expira:
+            # Eliminar expirado
+            _delete("verificaciones_pendientes", {"id": f"eq.{ver['id']}"})
+            return False, "El código ha expirado. Solicita uno nuevo."
+
+        # Crear usuario real
+        _post("usuarios", {
+            "username": ver["username"],
+            "email": ver["email"],
+            "password": ver["password_hash"],
+            "rol": "usuario",
+            "activo": True,
+            "email_verificado": True,
+            "descargas_usadas": 0,
+            "creado": _now()
+        })
+
+        # Limpiar verificación usada
+        _delete("verificaciones_pendientes", {"id": f"eq.{ver['id']}"})
+
+        return True, "Cuenta creada correctamente. Tienes 10 descargas gratis disponibles."
+
+    except Exception as e:
+        return False, f"Error verificando código: {e}"
+
+
+def reenviar_codigo(email: str) -> tuple[bool, str]:
+    """Reenvía el código de verificación para un email pendiente."""
+    email_norm = email.strip().lower()
+
+    try:
+        pendiente = _get("verificaciones_pendientes", filters={"email": f"eq.{email_norm}"})
+        if not pendiente:
+            return False, "No hay registro pendiente para este email"
+
+        ver = pendiente[0]
+
+        # Generar nuevo código
+        codigo = _codigo_verificacion()
+        expira = (datetime.now(timezone.utc) + timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
+
+        _patch("verificaciones_pendientes", {
+            "codigo": codigo,
+            "expira": expira
+        }, {"id": f"eq.{ver['id']}"})
+
+        if enviar_codigo_verificacion(email, codigo):
+            return True, "Nuevo código enviado. Revisa tu email."
+        else:
+            return False, "Error enviando el email. Intenta de nuevo más tarde."
+
+    except Exception as e:
+        return False, f"Error reenviando código: {e}"
+
+
+# ──────────────────────────────────────────────────────────────
+#  Registro (mantener para compatibilidad y admin)
 # ──────────────────────────────────────────────────────────────
 
 def registrar(username: str, password: str, dias: int = 0, rol: str = "usuario") -> tuple[bool, str]:
-    """Crea un usuario nuevo. Si dias=0, se crea sin suscripcion (modo gratuito con 10 descargas)."""
+    """Crea un usuario nuevo (solo para admin o compatibilidad). No requiere email."""
     if len(username) < 3:
         return False, "El usuario debe tener al menos 3 caracteres"
     if len(password) < 6:
@@ -225,6 +536,7 @@ def registrar(username: str, password: str, dias: int = 0, rol: str = "usuario")
             "password": _hash(password),
             "rol": rol,
             "activo": True,
+            "email_verificado": False,
             "descargas_usadas": 0,
             "creado": _now()
         })
@@ -238,7 +550,7 @@ def registrar(username: str, password: str, dias: int = 0, rol: str = "usuario")
                     "expira": _fecha_expira(dias),
                     "creado": _now()
                 })
-        return True, "Usuario creado correctamente. Tienes 10 descargas gratis disponibles."
+        return True, "Usuario creado correctamente."
     except Exception as e:
         return False, f"Error creando usuario: {e}"
 

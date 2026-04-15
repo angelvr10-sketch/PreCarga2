@@ -1,4 +1,12 @@
-"""routers/auth.py — Rutas de autenticación y administración de usuarios"""
+"""routers/auth.py — Rutas de autenticación y administración de usuarios
+
+Flujo de registro con verificación por email:
+1. GET /registro -> Muestra formulario con email
+2. POST /registro/iniciar -> Valida datos, envía código, redirige a /verificar
+3. GET /verificar -> Muestra formulario de código
+4. POST /verificar -> Verifica código y crea cuenta
+5. POST /registro/reenviar -> Reenvía código
+"""
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from templates_cfg import templates
@@ -9,9 +17,11 @@ from core.auth import (
     agregar_dias, toggle_activo,
     get_current_user, require_admin,
     dias_restantes,
+    registrar_enviar_codigo, verificar_codigo_y_crear_cuenta,
+    reenviar_codigo, _ip_from_request
 )
 
-router    = APIRouter()
+router = APIRouter()
 
 
 # ── Login ─────────────────────────────────────────────────────
@@ -50,25 +60,63 @@ async def logout_route(request: Request):
     return response
 
 
-# ── Registro ──────────────────────────────────────────────────
+# ── Registro con verificación por email ───────────────────────
 @router.get("/registro", response_class=HTMLResponse)
-async def registro_page(request: Request):
-    return templates.TemplateResponse(request, "registro.html", {"error": None})
+async def registro_page(request: Request, error: str = None, info: str = None):
+    return templates.TemplateResponse(request, "registro.html", {"error": error, "info": info})
 
 
-@router.post("/registro")
-async def registro_post(request: Request,
-                        username: str = Form(...),
-                        password: str = Form(...),
-                        password2: str = Form(...)):
+@router.post("/registro/iniciar")
+async def registro_iniciar(request: Request,
+                           email: str = Form(...),
+                           username: str = Form(...),
+                           password: str = Form(...),
+                           password2: str = Form(...)):
     if password != password2:
         return templates.TemplateResponse(request, "registro.html",
                                           {"error": "Las contraseñas no coinciden"})
-    ok, msg = registrar(username, password, dias=0)  # dias=0 -> sin suscripcion, 10 descargas gratis
+
+    ip = _ip_from_request(request)
+    ok, msg = registrar_enviar_codigo(email, username, password, ip)
+
     if not ok:
         return templates.TemplateResponse(request, "registro.html", {"error": msg})
-    # Registro exitoso — redirigir a login
+
+    # Redirigir a verificación con email en query param
+    return RedirectResponse(f"/verificar?email={email}", status_code=303)
+
+
+@router.get("/verificar", response_class=HTMLResponse)
+async def verificar_page(request: Request, email: str = "", error: str = None, info: str = None):
+    return templates.TemplateResponse(request, "verificar.html", {
+        "email": email,
+        "error": error,
+        "info": info
+    })
+
+
+@router.post("/verificar")
+async def verificar_post(request: Request,
+                         email: str = Form(...),
+                         codigo: str = Form(...)):
+    ok, msg = verificar_codigo_y_crear_cuenta(email, codigo)
+
+    if not ok:
+        return RedirectResponse(
+            f"/verificar?email={email}&error={msg}",
+            status_code=303
+        )
+
+    # Éxito - redirigir a login con mensaje
     return RedirectResponse("/login?registered=1", status_code=303)
+
+
+@router.post("/registro/reenviar")
+async def registro_reenviar(request: Request, email: str = Form(...)):
+    ok, msg = reenviar_codigo(email)
+    if not ok:
+        return RedirectResponse(f"/verificar?email={email}&error={msg}", status_code=303)
+    return RedirectResponse(f"/verificar?email={email}&info={msg}", status_code=303)
 
 
 # ── Admin: gestión de usuarios ────────────────────────────────
