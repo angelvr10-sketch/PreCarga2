@@ -273,8 +273,14 @@ def agregar_dias(uid: int, dias: int):
                   select="expira", order="expira.desc", limit=1)
 
     hoy = date.today()
-    if actual and actual[0]["expira"] >= hoy.strftime("%Y-%m-%d"):
-        base = datetime.strptime(actual[0]["expira"], "%Y-%m-%d").date()
+    if actual:
+        # Manejar formato con o sin hora: "2026-04-15" o "2026-04-15 00:00:00"
+        expira_str = actual[0]["expira"].split(" ")[0]  # Tomar solo la fecha
+        expira_date = datetime.strptime(expira_str, "%Y-%m-%d").date()
+        if expira_date >= hoy:
+            base = expira_date
+        else:
+            base = hoy
     else:
         base = hoy
 
