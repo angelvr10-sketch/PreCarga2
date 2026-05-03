@@ -19,12 +19,9 @@ from core.supabase_db import (
 # Constante para descargas gratis
 MAX_DESCARGAS_GRATIS = 30
 
-# Configuracion de email (debe estar en .env)
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USER)
+# Configuracion de email via Resend (debe estar en .env)
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+FROM_EMAIL = os.getenv("FROM_EMAIL", "Precarga SHAT <noreply@precargashat.com>")
 
 # Rate limiting: max 3 registros por IP en 24h
 MAX_REGISTROS_POR_IP = 3
@@ -294,16 +291,9 @@ def _registrar_intento(ip: str):
 # ──────────────────────────────────────────────────────────────
 
 def enviar_email(to: str, subject: str, body: str) -> bool:
-    """Envia email usando SMTP configurado."""
-    import smtplib
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
+    """Envia email usando Resend (HTTP API — compatible con Render/Railway)."""
 
-    # Debugging: Print SMTP credentials being used (masked password)
-    print(f"SMTP Config: Host={SMTP_HOST}, Port={SMTP_PORT}, User={SMTP_USER}, From={FROM_EMAIL}")
-    print(f"SMTP Password: {'*' * len(SMTP_PASSWORD) if SMTP_PASSWORD else 'None'}")
-
-    if not SMTP_USER or not SMTP_PASSWORD:
+    if not RESEND_API_KEY:
         # Modo desarrollo: imprimir a consola
         print(f"\n[EMAIL SIMULADO - DESARROLLO]")
         print(f"Para: {to}")
@@ -312,28 +302,31 @@ def enviar_email(to: str, subject: str, body: str) -> bool:
         print(f"{'='*50}\n")
         return True
 
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = FROM_EMAIL
-        msg['To'] = to
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain', 'utf-8'))
+    if not HAS_HTTPX:
+        print("ERROR: httpx no instalado. Ejecuta: pip install httpx")
+        return False
 
-        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
-        server.starttls()
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.send_message(msg)
-        server.quit()
-        return True
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"Error de autenticación SMTP (credenciales incorrectas): {e}")
-        return False
-    except smtplib.SMTPConnectError as e:
-        print(f"Error de conexión SMTP (servidor no accesible o puerto incorrecto): {e}")
-        return False
-    except smtplib.SMTPException as e:
-        print(f"Error general SMTP: {e}")
-        return False
+    try:
+        response = httpx.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": FROM_EMAIL,
+                "to": [to],
+                "subject": subject,
+                "text": body,
+            },
+            timeout=10.0,
+        )
+        if response.status_code == 200 or response.status_code == 201:
+            print(f"Email enviado a {to} via Resend")
+            return True
+        else:
+            print(f"Error Resend [{response.status_code}]: {response.text}")
+            return False
     except Exception as e:
         print(f"Error inesperado al enviar email: {e}")
         return False
