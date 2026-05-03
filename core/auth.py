@@ -17,11 +17,11 @@ from core.supabase_db import (
 )
 
 # Constante para descargas gratis
-MAX_DESCARGAS_GRATIS = 10
+MAX_DESCARGAS_GRATIS = 30
 
 # Configuracion de email (debe estar en .env)
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USER)
