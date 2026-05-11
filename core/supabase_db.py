@@ -25,7 +25,7 @@ HEADERS = {
     "Prefer": "return=representation",
 }
 
-BASE = SUPABASE_URL
+BASE = f"{SUPABASE_URL}/rest/v1"
 
 
 def _now() -> str:
