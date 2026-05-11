@@ -25,7 +25,7 @@ HEADERS = {
     "Prefer": "return=representation",
 }
 
-BASE = f"{SUPABASE_URL}/rest/v1"
+BASE = SUPABASE_URL
 
 
 def _now() -> str:
@@ -49,19 +49,37 @@ def _get(table: str, select: str = "*", filters: Optional[dict] = None,
         params["order"] = order
     if limit:
         params["limit"] = limit
-    r = httpx.get(f"{BASE}/{table}", headers=HEADERS, params=params, timeout=10)
-    r.raise_for_status()
-    return r.json() if r.status_code != 204 else []
+    
+    url = f"{BASE}/{table}"
+    try:
+        r = httpx.get(url, headers=HEADERS, params=params, timeout=10)
+        r.raise_for_status()
+        return r.json() if r.status_code != 204 else []
+    except Exception as e:
+        print(f"\n[DB ERROR GET] Table: {table} | URL: {url} | Params: {params}")
+        print(f"Error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response: {e.response.text}")
+        raise e
 
 
 def _post(table: str, data: dict) -> Optional[dict]:
     """POST a Supabase table. Devuelve el registro insertado o None."""
     if not httpx:
         raise RuntimeError("httpx no esta instalado. Ejecuta: pip install httpx")
-    r = httpx.post(f"{BASE}/{table}", headers=HEADERS, json=data, timeout=10)
-    r.raise_for_status()
-    result = r.json()
-    return result[0] if result else None
+    
+    url = f"{BASE}/{table}"
+    try:
+        r = httpx.post(url, headers=HEADERS, json=data, timeout=10)
+        r.raise_for_status()
+        result = r.json()
+        return result[0] if result else None
+    except Exception as e:
+        print(f"\n[DB ERROR POST] Table: {table} | URL: {url} | Data: {data}")
+        print(f"Error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response: {e.response.text}")
+        raise e
 
 
 def _delete(table: str, filters: dict) -> list:
@@ -71,9 +89,18 @@ def _delete(table: str, filters: dict) -> list:
     params = {}
     for k, v in filters.items():
         params[k] = v
-    r = httpx.delete(f"{BASE}/{table}", headers=HEADERS, params=params, timeout=10)
-    r.raise_for_status()
-    return r.json() if r.status_code != 204 else []
+    
+    url = f"{BASE}/{table}"
+    try:
+        r = httpx.delete(url, headers=HEADERS, params=params, timeout=10)
+        r.raise_for_status()
+        return r.json() if r.status_code != 204 else []
+    except Exception as e:
+        print(f"\n[DB ERROR DELETE] Table: {table} | URL: {url} | Filters: {filters}")
+        print(f"Error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response: {e.response.text}")
+        raise e
 
 
 def _patch(table: str, data: dict, filters: dict) -> list:
@@ -81,29 +108,31 @@ def _patch(table: str, data: dict, filters: dict) -> list:
     if not httpx:
         raise RuntimeError("httpx no esta instalado. Ejecuta: pip install httpx")
     params = dict(filters)
-    r = httpx.patch(f"{BASE}/{table}", headers=HEADERS, params=params, json=data, timeout=10)
-    r.raise_for_status()
-    return r.json() if r.status_code != 204 else []
+    
+    url = f"{BASE}/{table}"
+    try:
+        r = httpx.patch(url, headers=HEADERS, params=params, json=data, timeout=10)
+        r.raise_for_status()
+        return r.json() if r.status_code != 204 else []
+    except Exception as e:
+        print(f"\n[DB ERROR PATCH] Table: {table} | URL: {url} | Data: {data}")
+        print(f"Error: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+            print(f"Response: {e.response.text}")
+        raise e
 
 
 def _exec_sql(sql: str):
     """Ejecuta SQL directo via la API de Supabase (rpc)."""
     if not httpx:
         raise RuntimeError("httpx no esta instalado. Ejecuta: pip install httpx")
-    # Usar el endpoint de SQL directo no es trivial via REST, mejor usamos httpx
-    # directamente a la API. Para crear tablas, usamos la funcion rpc o el endpoint.
-    # La forma mas simple es ejecutar las sentencias DDL via el endpoint de SQL.
-    # Pero Supabase REST no soporta DDL directamente. En su lugar, asumimos
-    # que las tablas ya existen (el usuario las crea via SQL en el dashboard).
-    # Para verificar, hacemos una consulta simple.
     pass
 
 
 def verificar_conexion() -> bool:
     """Verifica que Supabase este accesible y las tablas existan."""
     try:
-        # Intentar consultar la tabla usuarios
         r = httpx.get(f"{BASE}/usuarios", headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "select": "id"}, timeout=10)
-        return r.status_code in (200, 204, 406)  # 406 puede ser normal si no hay datos
+        return r.status_code in (200, 204, 406)
     except Exception:
         return False

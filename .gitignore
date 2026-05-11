@@ -1,36 +1,22 @@
-# Python
+# Dependencias e instalaciones
 __pycache__/
 *.py[cod]
-*.pyo
-*.egg-info/
-dist/
-build/
-
-# Environment
-.env
+*$py.class
 venv/
-.venv/
+env/
+.env
 
-# Database
-*.db
-*.db-shm
-*.db-wal
-data/*.db
+# Datos sensibles y temporales
+solicitudes/
+logs/
+data/
+*.xlsx
+*.csv
+*.log
 
-# Logs
-logs/*.log
+# Docker y Fly.io
+.dockerignore
 
-# IDE
-.vscode/
-.idea/
-
-# OS
+# OS files
 .DS_Store
 Thumbs.db
-
-# Docker
-*.dockerfile
-!.dockerignore
-
-# Render/other
-render.yaml

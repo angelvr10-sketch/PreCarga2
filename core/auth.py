@@ -1,5 +1,5 @@
 """core/auth.py — Usuarios, sesiones y suscripciones con Supabase"""
-import hashlib
+import bcrypt
 import secrets
 import os
 import random
@@ -36,7 +36,16 @@ EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
 # ──────────────────────────────────────────────────────────────
 
 def _hash(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Genera hash usando bcrypt."""
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode('utf-8')
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    """Verifica contraseña contra hash de bcrypt."""
+    try:
+        return bcrypt.checkpw(password.encode(), hashed.encode('utf-8'))
+    except Exception:
+        return False
 
 
 def _fecha_expira(dias: int) -> str:
@@ -109,20 +118,16 @@ def login(username_or_email: str, password: str) -> Optional[str]:
     Devuelve token de sesion o None.
     """
     entrada = username_or_email.strip()
-    password_hash = _hash(password)
 
-    # Intentar buscar por username
+    # Buscar usuario por username o email
     rows = _get("usuarios", filters={
         "username": f"eq.{entrada}",
-        "password": f"eq.{password_hash}",
         "activo": "eq.true"
     })
 
-    # Si no encuentra, buscar por email
     if not rows:
         rows = _get("usuarios", filters={
             "email": f"eq.{entrada.lower()}",
-            "password": f"eq.{password_hash}",
             "activo": "eq.true"
         })
 
@@ -130,6 +135,10 @@ def login(username_or_email: str, password: str) -> Optional[str]:
         return None
 
     user = rows[0]
+
+    # Verificar contraseña con bcrypt
+    if not _verify_password(password, user['password']):
+        return None
 
     # Verificar suscripcion vigente (opcional - usuarios sin suscripcion pueden entrar en modo gratis)
     hoy = date.today().strftime("%Y-%m-%d")
