@@ -4,8 +4,9 @@ import csv
 import shutil
 import openpyxl
 import pdfplumber
+import io
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Union
 from .config import (
     logger, SOL_DIR, RUTA_PLANTILLA, RUTA_PLANTILLA_SALIDA,
     RUTA_PLANTILLA_ENTRADA, RUTA_ACTIVOS, MAPEO_ACTIVOS
@@ -13,7 +14,6 @@ from .config import (
 from .catalogo import obtener_nombre_compania, leer_activos
 from .db import guardar_solicitud
 from datetime import datetime
-
 
 
 # ──────────────────────────────────────────────────────────────
@@ -352,32 +352,63 @@ def listar_archivos_baja() -> List[Path]:
                   key=lambda p: p.stat().st_mtime, reverse=True)
 
 
-def listar_solicitudes_xlsx() -> list[dict]:
+def listar_solicitudes_xlsx(page: int = 1, limit: int = 20, search: Optional[str] = None) -> tuple[list[dict], int]:
     """
-    Lee solicitudes desde SQLite — instantáneo.
-    Devuelve lista de dicts listos para el template.
+    Lee solicitudes desde Supabase con paginación y búsqueda opcional.
+    Devuelve una tupla: (lista de dicts, total_de_registros).
     """
-    from .db import listar_solicitudes_db
-    rows = listar_solicitudes_db()
-    result = []
-    for r in rows:
-        # Calcular fecha_mod desde el archivo si existe
-        archivo = SOL_DIR / r["archivo"] if r.get("archivo") else None
-        fecha_mod = ""
-        if archivo and archivo.exists():
-            fecha_mod = datetime.fromtimestamp(
-                archivo.stat().st_mtime
-            ).strftime("%d/%m/%Y %H:%M")
-        result.append({
-            "nombre":    r["numero"],
-            "compania":  r["compania"] or "",
-            "n":         r["n_personas"],
-            "fecha":     r["fecha_llegada"] or "",
-            "fecha_mod": fecha_mod,
-            "tiene_bajas": bool(r["tiene_bajas"]),
-            "n_bajas":   r["n_bajas"],
-        })
-    return result
+    from .supabase_db import _get
+    
+    try:
+        offset = (page - 1) * limit
+        
+        # Construir filtros
+        filters = {}
+        if search:
+            # Supabase usa 'ilike' para búsqueda parcial insensible a mayúsculas
+            filters["numero"] = f"ilike.%{search.strip()}%"
+        
+        # 1. Obtener los registros paginados
+        params = {
+            "select": "*", 
+            "order": "fecha_llegada.desc,procesado.desc", 
+            "limit": limit, 
+            "offset": offset
+        }
+        
+        # Combinar filtros y parámetros
+        query_params = {**params}
+        if filters:
+            query_params.update(filters)
+            
+        rows = _get("solicitudes", filters=query_params)
+        
+        # 2. Obtener el total de registros para calcular las páginas
+        # Si hay búsqueda, el total debe reflejar solo los resultados filtrados
+        total_params = {"select": "id"}
+        if search:
+            total_params["numero"] = f"ilike.%{search.strip()}%"
+            
+        total_rows = _get("solicitudes", **total_params) 
+        total_count = len(total_rows)
+
+        result = []
+        for r in rows:
+            fecha_mod = "" 
+            
+            result.append({
+                "nombre":    r["numero"],
+                "compania":  r["compania"] or "",
+                "n":         r["n_personas"],
+                "fecha":     r["fecha_llegada"] or "",
+                "fecha_mod": fecha_mod,
+                "tiene_bajas": bool(r["tiene_bajas"]),
+                "n_bajas":   r["n_bajas"],
+            })
+        return result, total_count
+    except Exception as e:
+        logger.error(f"Error en listar_solicitudes_xlsx: {e}")
+        return [], 0
 
 
 def leer_meta_xlsx(ruta: Path) -> dict:
@@ -474,10 +505,11 @@ def _fila_entrada(idx: int) -> int:
     return _FILA_INICIO_ENT + (0 if b == 0 else 17 + (b-1)*_PASO_ENT) + p
 
 
-def leer_personal_de_xlsx(ruta: Path) -> List[Dict]:
+def leer_personal_de_xlsx(source: Union[Path, io.BytesIO]) -> List[Dict]:
     personal = []
     try:
-        wb = openpyxl.load_workbook(ruta, data_only=True)
+        # Carga el libro desde el archivo o el stream de bytes
+        wb = openpyxl.load_workbook(source, data_only=True)
         ws = wb.active
         compania   = str(ws["E8"].value or "").strip()
         transporte = ""
@@ -489,7 +521,13 @@ def leer_personal_de_xlsx(ruta: Path) -> List[Dict]:
                     break
             if transporte:
                 break
-        num_sol = ruta.stem
+        
+        # El numero de solicitud está en la celda J1
+        num_sol = str(ws["J1"].value or "").strip()
+        if not num_sol:
+            # Si es un archivo Path, usamos el nombre sin extensión. Si es BytesIO, usamos un valor genérico o el esperado.
+            num_sol = source.stem if isinstance(source, Path) else "MEM_FILE"
+
         for row in ws.iter_rows(min_row=15, max_row=ws.max_row):
             id_val = row[0].value
             if id_val is None:
@@ -506,7 +544,8 @@ def leer_personal_de_xlsx(ruta: Path) -> List[Dict]:
                               "compania": compania, "solicitud": num_sol,
                               "transporte": transporte})
     except Exception as e:
-        logger.error(f"Error leyendo {ruta.name}: {e}")
+        name = source.name if isinstance(source, Path) else "BytesStream"
+        logger.error(f"Error leyendo {name}: {e}")
     return personal
 
 

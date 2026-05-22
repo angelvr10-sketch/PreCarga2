@@ -9,41 +9,84 @@
 
 <div class="card">
   <form id="form-altas">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px">
       <div class="card-title" style="margin:0">Solicitudes disponibles</div>
-      <div style="display:flex;gap:8px">
-        <button type="button" class="btn btn-ghost btn-sm" onclick="selectAll('solicitudes',true)">Seleccionar todo</button>
-        <button type="button" class="btn btn-ghost btn-sm" onclick="selectAll('solicitudes',false)">Ninguno</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="display:flex;gap:4px">
+          <input type="text" 
+                 name="search" 
+                 id="search-altas" 
+                 placeholder="Buscar solicitud..." 
+                 class="input btn-sm" 
+                 style="width:180px"
+                 hx-get="/htmx/solicitudes" 
+                 hx-trigger="keyup changed delay:300ms" 
+                 hx-target="#solicitudes-container" 
+                 hx-indicator="#loading-altas">
+        </div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="selectAllSolicitudes(true)">Seleccionar todo</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="selectAllSolicitudes(false)">Ninguno</button>
       </div>
     </div>
 
-    {% if solicitudes %}
-    <div style="max-height:400px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
-      {% for s in solicitudes %}
-      <label class="sol-row" style="cursor:pointer">
-        <input type="checkbox" name="solicitudes" value="{{ s.nombre }}">
-        <div class="sol-info">
-          <div class="sol-name">{{ s.nombre }}</div>
-          <div class="sol-sub">
-            {{ s.compania or '—' }}
-            {% if s.fecha %} · Llegada: {{ s.fecha }}{% endif %}
-          </div>
-        </div>
-        <span class="badge badge-blue">{{ s.n }} persona{{ 's' if s.n != 1 else '' }}</span>
-      </label>
-      {% endfor %}
+    <div id="loading-altas" class="htmx-indicator" style="text-align:center; padding:10px; display:none;">
+      Cargando...
     </div>
-    {% else %}
-    <p style="color:var(--muted);text-align:center;padding:24px">No hay solicitudes procesadas en /solicitudes</p>
-    {% endif %}
 
-    {% if solicitudes %}
-    <hr class="divider">
-    <button type="button" class="btn btn-success" onclick="generarEntradas('form-altas')">
-      📋 Generar plantilla de entradas
-    </button>
-    {% endif %}
+    <div id="solicitudes-container" hx-get="/htmx/solicitudes" hx-trigger="load">
+      <!-- Las solicitudes se cargarán aquí dinámicamente vía HTMX -->
+      <p style="color:var(--muted);text-align:center;padding:24px">Cargando solicitudes...</p>
+    </div>
+
+    <div style="margin-top:20px">
+      <button type="button" class="btn btn-success" onclick="generarEntradas('form-altas')">
+        📋 Generar plantilla de entradas
+      </button>
+    </div>
   </form>
 </div>
+
+<script src="/static/js/altas.js"></script>
+<script>
+async function generarEntradas(formId) {
+  const form = document.getElementById(formId);
+  
+  // Leemos los IDs seleccionados desde el localStorage en lugar del formData del DOM
+  const selected = JSON.parse(localStorage.getItem('selectedSolicitudes') || '[]');
+  
+  if (selected.length === 0) {
+    alert('Por favor, selecciona al menos una solicitud.');
+    return;
+  }
+
+  const btn = event.target;
+  const originalText = btn.innerText;
+  btn.innerText = '⏳ Procesando...';
+  btn.disabled = true;
+
+  try {
+    // Creamos un FormData manualmente para enviar la lista completa de seleccionados
+    const bodyFormData = new FormData();
+    selected.forEach(id => bodyFormData.append('solicitudes', id));
+
+    const response = await fetch('/api/generar-entradas', {
+      method: 'POST',
+      body: bodyFormData
+    });
+    const result = await response.json();
+
+    if (result.ok) {
+      window.location.href = `/api/descargar/${result.archivo}`;
+    } else {
+      alert('Error: ' + result.mensaje);
+    }
+  } catch (e) {
+    alert('Error de conexión al servidor.');
+  } finally {
+    btn.innerText = originalText;
+    btn.disabled = false;
+  }
+}
+</script>
 
 {% endblock %}

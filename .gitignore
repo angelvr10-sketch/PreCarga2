@@ -1,22 +1,10 @@
-# Dependencias e instalaciones
 __pycache__/
 *.py[cod]
 *$py.class
-venv/
-env/
 .env
-
-# Datos sensibles y temporales
-solicitudes/
-logs/
-data/
-*.xlsx
-*.csv
+.venv
+venv/
+ENV/
+.vscode/
+.idea/
 *.log
-
-# Docker y Fly.io
-.dockerignore
-
-# OS files
-.DS_Store
-Thumbs.db

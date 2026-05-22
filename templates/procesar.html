@@ -26,12 +26,21 @@
 
 <div class="card">
   <div class="card-title">Solicitudes procesadas</div>
-  <div id="sol-lista"
-       hx-get="/htmx/solicitudes"
-       hx-trigger="load, reload"
-       hx-swap="innerHTML">
-    <p style="color:var(--muted);text-align:center;padding:16px">Cargando...</p>
-  </div>
+  <form id="form-entradas">
+    <div id="solicitudes-container">
+      <div id="sol-lista"
+           hx-get="/htmx/solicitudes"
+           hx-trigger="load, reload"
+           hx-swap="innerHTML">
+        <p style="color:var(--muted);text-align:center;padding:16px">Cargando...</p>
+      </div>
+    </div>
+    <div style="display:flex; justify-content:flex-end; padding:16px; border-top:1px solid var(--border-color); gap:10px">
+      <button type="button" onclick="generarEntradas()" class="btn btn-primary" style="gap:8px">
+        <span>📥</span> Generar Plantilla de Entradas
+      </button>
+    </div>
+  </form>
 </div>
 
 {% endblock %}
@@ -40,5 +49,60 @@
   document.addEventListener("DOMContentLoaded", () => {
     initUploadZone("upload-zone", "pdf-input");
   });
+
+  function updateSelectedItems(checkbox) {
+    let selected = JSON.parse(localStorage.getItem('selected_solicitudes') || '[]');
+    if (checkbox.checked) {
+      if (!selected.includes(checkbox.value)) {
+        selected.push(checkbox.value);
+      }
+    } else {
+      selected = selected.filter(item => item !== checkbox.value);
+    }
+    localStorage.setItem('selected_solicitudes', JSON.stringify(selected));
+  }
+
+  async function generarEntradas() {
+    const selected = JSON.parse(localStorage.getItem('selected_solicitudes') || '[]');
+    
+    if (selected.length === 0) {
+      alert("Por favor, seleccione al menos una solicitud.");
+      return;
+    }
+
+    const btn = document.querySelector('button[onclick="generarEntradas()"]');
+    const originalText = btn.innerHTML;
+    
+    try {
+      btn.disabled = true;
+      btn.innerHTML = "⏳ Generando...";
+      
+      const formData = new FormData();
+      selected.forEach(val => formData.append('solicitudes', val));
+      
+      const response = await fetch('/api/generar-entradas', {
+        method: 'POST',
+        body: formData
+      });
+      
+      const data = await response.json();
+      
+      if (data.ok) {
+        alert(`Plantilla generada con éxito. Registros: ${data.registros}\nIniciando descarga...`);
+        window.location.href = data.download_url;
+        // Opcional: limpiar selección después de generar
+        localStorage.removeItem('selected_solicitudes');
+        document.querySelectorAll('.sol-checkbox').forEach(cb => cb.checked = false);
+      } else {
+        alert("Error: " + data.mensaje);
+      }
+    } catch (e) {
+      alert("Ocurrió un error inesperado al generar la plantilla.");
+      console.error(e);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  }
 </script>
 {% endblock %}

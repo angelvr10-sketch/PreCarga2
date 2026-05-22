@@ -1,20 +1,57 @@
-{% if solicitudes %}
-<div class="table-wrap">
-  <table>
-    <thead><tr><th>No. Solicitud</th><th>Compañía</th><th>Personas</th><th>Modificado</th><th></th></tr></thead>
-    <tbody>
-    {% for s in solicitudes %}
-    <tr>
-      <td><b>{{ s.nombre }}</b></td>
-      <td style="color:var(--muted)">{{ s.compania or '—' }}</td>
-      <td><span class="badge badge-blue">{{ s.n }} persona{{ 's' if s.n != 1 else '' }}</span></td>
-      <td style="color:var(--muted);font-size:12px">{{ s.fecha_mod }}</td>
-      <td><a href="/api/descargar/{{ s.nombre }}.xlsx" class="btn btn-ghost btn-sm">⬇</a></td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+{% for s in solicitudes %}
+<div class="sol-row" style="display:flex; align-items:center; gap:12px; padding: 8px 12px; border-bottom: 1px solid var(--border-color);">
+  <input type="checkbox" name="solicitudes" value="{{ s.nombre }}" 
+         class="checkbox checkbox-primary checkbox-sm sol-checkbox" 
+         style="flex-shrink:0; width:18px; height:18px; cursor:pointer;"
+         onclick="updateSelectedItems(this)">
+  <div style="flex:1; display:flex; align-items:center; gap:12px">
+    <div class="sol-info">
+      <div class="sol-name" style="font-weight:600">{{ s.nombre }}</div>
+      <div class="sol-sub" style="opacity:0.8">
+        {{ s.compania or '—' }}
+        {% if s.fecha %} · Llegada: {{ s.fecha }}{% endif %}
+      </div>
+    </div>
+  </div>
+  <span class="badge badge-blue" style="min-width:80px; text-align:center">{{ s.n }} persona{{ 's' if s.n != 1 else '' }}</span>
+  <a href="/api/descargar/{{ s.nombre }}.xlsx" 
+     class="btn btn-primary btn-sm" 
+     title="Descargar Excel" 
+     style="text-decoration:none; font-size:12px; display:flex; align-items:center; gap:4px; padding: 4px 10px; border-radius: 6px; background-color: var(--primary-color); color: white; font-weight: 500;">
+     <span>📥</span> Descargar
+  </a>
 </div>
-{% else %}
-<p style="color:var(--muted);text-align:center;padding:20px">No hay solicitudes procesadas aún</p>
+{% endfor %}
+
+{% if not solicitudes %}
+<p style="color:var(--muted);text-align:center;padding:24px">No se encontraron solicitudes coincidentes</p>
 {% endif %}
+
+<div style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:15px;padding-bottom:15px">
+  {% if has_prev %}
+    <button hx-get="/htmx/solicitudes?page={{ page - 1 }}&search={{ search }}" 
+            hx-target="#solicitudes-container" 
+            hx-swap="innerHTML"
+            class="btn btn-ghost btn-sm">⬅️ Anterior</button>
+  {% endif %}
+  
+  <span style="font-size: 13px; color: var(--muted)">Página {{ page }} de {{ total_pages }}</span>
+  
+  {% if has_next %}
+    <button hx-get="/htmx/solicitudes?page={{ page + 1 }}&search={{ search }}" 
+            hx-target="#solicitudes-container" 
+            hx-swap="innerHTML"
+            class="btn btn-ghost btn-sm">Siguiente ➡️</button>
+  {% endif %}
+</div>
+<script>
+  // Restaurar checkboxes seleccionados después de que HTMX cargue el contenido
+  (function() {
+    const selected = JSON.parse(localStorage.getItem('selected_solicitudes') || '[]');
+    document.querySelectorAll('.sol-checkbox').forEach(cb => {
+      if (selected.includes(cb.value)) {
+        cb.checked = true;
+      }
+    });
+  })();
+</script>

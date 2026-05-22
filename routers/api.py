@@ -4,6 +4,8 @@ import io
 import json
 import uuid
 import tempfile
+import os
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -19,6 +21,7 @@ from core import (
 )
 from core.config import RUTA_PLANTILLA_SALIDA, RUTA_PLANTILLA_ENTRADA
 from core.auth import get_current_user, puede_descargar, contar_descarga, MAX_DESCARGAS_GRATIS
+from core.supabase_db import upload_file_to_storage, download_file_from_storage, delete_file_from_storage
 
 router = APIRouter(prefix="/api")
 
@@ -39,6 +42,15 @@ async def procesar_pdf(file: UploadFile = File(...)):
 
         exito, mensaje = llenar_plantilla(ruta_tmp)
         ruta_tmp.unlink(missing_ok=True)
+        
+        if exito:
+            # Buscar el archivo generado más reciente en SOL_DIR
+            archivos = sorted(SOL_DIR.glob("*.xlsx"), key=os.path.getmtime, reverse=True)
+            if archivos:
+                archivo_gen = archivos[0]
+                upload_file_to_storage("solicitudes", archivo_gen, archivo_gen.name)
+                archivo_gen.unlink()
+                
         return JSONResponse({"ok": exito, "mensaje": mensaje})
 
     except Exception as e:
@@ -85,7 +97,6 @@ async def buscar_bajas(
     for nombre_sol in solicitudes:
         ruta_csv = SOL_DIR / f"{nombre_sol}"
         if not ruta_csv.exists():
-            # intentar añadir extensión si viene sin ella
             ruta_csv = SOL_DIR / f"{nombre_sol}.csv" if not nombre_sol.endswith(".csv") else ruta_csv
         if not ruta_csv.exists():
             continue
@@ -97,16 +108,12 @@ async def buscar_bajas(
                     rfc = (row.get("rfc") or "").upper().strip()
                     nom = (row.get("nombre") or "").upper().strip()
                     t   = (row.get("transporte") or "").strip()
-                    if rfc:
-                        rfc_a_sol[rfc]    = num
-                    if nom:
-                        nombre_a_sol[nom] = num
-                    if t and num not in trans_por_sol:
-                        trans_por_sol[num] = t
+                    if rfc: rfc_a_sol[rfc]    = num
+                    if nom: nombre_a_sol[nom] = num
+                    if t and num not in trans_por_sol: trans_por_sol[num] = t
         except Exception:
             pass
 
-    # Detectar columnas en la BD
     col_rfc    = _detectar(columnas, ["rfc", "ficha", "curp"])
     col_nombre = _detectar(columnas, ["nombre", "name", "trabajador"])
     col_depto  = _detectar(columnas, ["depto", "departamento", "compania", "empresa"])
@@ -124,10 +131,8 @@ async def buscar_bajas(
             encontrados.append(fc)
 
     if not encontrados:
-        return JSONResponse({"ok": False,
-                             "mensaje": f"Sin coincidencias — se buscaron {len(rfc_a_sol)} RFC(s)"})
+        return JSONResponse({"ok": False, "mensaje": f"Sin coincidencias — se buscaron {len(rfc_a_sol)} RFC(s)"})
 
-    # Generar xlsx de salidas
     ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = SOL_DIR / f"_salidas_{ts}.xlsx"
 
@@ -141,9 +146,9 @@ async def buscar_bajas(
             col_transporte= "__transporte__",
             ruta_destino  = dest,
         )
+        upload_file_to_storage("solicitudes", dest, dest.name)
+        dest.unlink()
         return JSONResponse({"ok": True, "encontrados": n, "archivo": dest.name})
-    except FileNotFoundError as e:
-        return JSONResponse({"ok": False, "mensaje": str(e)})
     except Exception as e:
         logger.error(f"Error generando plantilla salidas: {e}")
         return JSONResponse({"ok": False, "mensaje": str(e)})
@@ -153,22 +158,33 @@ async def buscar_bajas(
 @router.post("/generar-entradas")
 async def generar_entradas(solicitudes: list[str] = Form(...)):
     todos = []
-    for nombre in solicitudes:
-        ruta = SOL_DIR / f"{nombre}.xlsx"
-        if ruta.exists():
-            todos.extend(leer_personal_de_xlsx(ruta))
+    
+    def sync_process(nombre):
+        nombre_archivo = f"{nombre}.xlsx"
+        try:
+            contenido = download_file_from_storage("solicitudes", nombre_archivo)
+            return leer_personal_de_xlsx(io.BytesIO(contenido))
+        except Exception as e:
+            logger.error(f"Error procesando {nombre_archivo}: {e}")
+            return []
+
+    # Ejecutamos las descargas en hilos para no bloquear el event loop y ganar velocidad
+    resultados = await asyncio.gather(*[asyncio.to_thread(sync_process, n) for n in solicitudes])
+    
+    for res in resultados:
+        todos.extend(res)
 
     if not todos:
-        return JSONResponse({"ok": False, "mensaje": "No se encontró personal en las solicitudes"})
+        return JSONResponse({"ok": False, "mensaje": "No se encontró personal en las solicitudes seleccionadas en el almacenamiento"})
 
     ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = SOL_DIR / f"_entradas_{ts}.xlsx"
 
     try:
         n = llenar_plantilla_entrada(todos, dest)
-        return JSONResponse({"ok": True, "registros": n, "archivo": dest.name})
-    except FileNotFoundError as e:
-        return JSONResponse({"ok": False, "mensaje": str(e)})
+        upload_file_to_storage("solicitudes", dest, dest.name)
+        dest.unlink()
+        return JSONResponse({"ok": True, "registros": n, "archivo": dest.name, "download_url": f"/api/descargar/{dest.name}"})
     except Exception as e:
         logger.error(f"Error generando plantilla entradas: {e}")
         return JSONResponse({"ok": False, "mensaje": str(e)})
@@ -177,29 +193,40 @@ async def generar_entradas(solicitudes: list[str] = Form(...)):
 # ── Descargar archivo ─────────────────────────────────────────
 @router.get("/descargar/{nombre}")
 async def descargar(request: Request, nombre: str):
-    # Verificar autenticacion
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/login", status_code=303)
 
-    # Verificar si puede descargar (suscripcion activa o descargas gratis)
     puede, razon = puede_descargar(user)
     if not puede:
-        # Redirigir a checkout con mensaje
         return RedirectResponse("/checkout?no_downloads=1", status_code=303)
 
-    # Contar descarga si es usuario gratuito
     from core.auth import suscripcion_vigente
-    if not suscripcion_vigente(user):
+    if suscripcion_vigente(user):
         contar_descarga(user["id"])
 
-    # Buscar en solicitudes/
-    ruta = SOL_DIR / nombre
-    if not ruta.exists():
-        raise HTTPException(404, f"Archivo no encontrado: {nombre}")
-    media = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-             if nombre.endswith(".xlsx") else "text/csv")
-    return FileResponse(ruta, media_type=media, filename=nombre)
+    try:
+        # Ahora bajamos el archivo desde Supabase Storage en lugar del disco local
+        content = download_file_from_storage("solicitudes", nombre)
+        
+        # Una vez descargado el contenido, eliminamos el archivo del bucket 
+        # para no conservar las listas temporales generadas
+        try:
+            delete_file_from_storage("solicitudes", nombre)
+        except Exception as e:
+            logger.error(f"Error eliminando archivo temporal {nombre} tras descarga: {e}")
+
+        media = ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                 if nombre.endswith(".xlsx") else "text/csv")
+        
+        return StreamingResponse(
+            io.BytesIO(content), 
+            media_type=media, 
+            headers={"Content-Disposition": f"attachment; filename={nombre}"}
+        )
+    except Exception as e:
+        logger.error(f"Error descargando archivo {nombre} desde storage: {e}")
+        raise HTTPException(404, f"Archivo no encontrado en el storage: {nombre}")
 
 
 # ── Descargar log ─────────────────────────────────────────────

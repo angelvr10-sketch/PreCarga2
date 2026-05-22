@@ -43,8 +43,13 @@ async def dashboard(request: Request):
     from core.db import listar_solicitudes_db
     sol_db = listar_solicitudes_db(limit=8)
     baj    = list(SOL_DIR.glob("*-B.csv")) if SOL_DIR.exists() else []
+    
+    # Corregimos el acceso a stats para evitar el error de tupla
+    res_sol = listar_solicitudes_xlsx()
+    sol_count = res_sol[1] if isinstance(res_sol, tuple) else len(res_sol)
+    
     stats  = {
-        "solicitudes": len(listar_solicitudes_xlsx()),
+        "solicitudes": sol_count,
         "bajas":       len(baj),
         "companias":   len(leer_companias()),
         "activos":     len(leer_activos()),
@@ -82,11 +87,17 @@ async def altas(request: Request):
     redir = require_login(request)
     if redir:
         return redir
-    # listar_solicitudes_xlsx ahora lee de la BD — instantáneo
-    solicitudes = listar_solicitudes_xlsx()
+    
+    search = request.query_params.get("search", "").strip()
+    
+    # Desestructuramos la tupla (datos, total) para enviar solo la lista al template
+    res = listar_solicitudes_xlsx(search=search)
+    solicitudes = res[0] if isinstance(res, tuple) else res
+    
     return templates.TemplateResponse(request, "altas.html", {
         "page": "altas", "user": get_current_user(request),
         "solicitudes": solicitudes,
+        "search": search,
     })
 
 

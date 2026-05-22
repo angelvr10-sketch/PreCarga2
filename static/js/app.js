@@ -69,6 +69,19 @@ async function uploadPDFs(input, logId, statsId) {
         ok++;
         appendLog(log, `✓ ${d.mensaje}`, "ok");
         toast(`✓ ${file.name}`, "ok");
+        
+        // DESCARGA AUTOMÁTICA: Crear enlace temporal para disparar descarga sin recargar página
+        const match = d.mensaje.match(/Archivo generado: ([\w\.-]+)/);
+        if (match && match[1]) {
+          const fileName = match[1];
+          const a = document.createElement("a");
+          a.href = `/api/descargar/${fileName}`;
+          a.setAttribute("download", fileName);
+          a.style.display = "none";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
       } else {
         err++;
         appendLog(log, `✗ ${d.mensaje}`, "err");
