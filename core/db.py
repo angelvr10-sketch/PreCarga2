@@ -147,42 +147,6 @@ def obtener_personal_baja_db(numero: str) -> list[dict]:
     return [dict(r) for r in pers]
 
 
-def buscar_personal_bajas_en_bd(numeros_sol: list[str],
-                                 rfcs: set[str],
-                                 nombres: set[str]) -> list[dict]:
-    """
-    Busca en la tabla personal los registros de baja que coincidan
-    con los RFC o nombres dados.
-    """
-    if not numeros_sol:
-        return []
-
-    # Supabase REST API no soporta IN() directamente facil, asi que hacemos
-    # una query con join y filtramos en Python
-    # Primero obtenemos todo el personal de baja para esas solicitudes
-    resultado = []
-    for num in numeros_sol:
-        sol_rows = _get("solicitudes", filters={"numero": f"eq.{num}"}, select="id")
-        if not sol_rows:
-            continue
-        sol_id = sol_rows[0]["id"]
-        pers = _get("personal", filters={"solicitud_id": f"eq.{sol_id}", "tipo": "eq.baja"})
-        for p in pers:
-            d = dict(p)
-            vr = d.get("rfc", "").upper().strip()
-            vn = d.get("nombre", "").upper().strip()
-            if (vr and vr in rfcs) or (vn and vn in nombres):
-                # Necesitamos el numero de solicitud
-                resultado.append({
-                    "solicitud": num,
-                    "rfc": d.get("rfc", ""),
-                    "nombre": d.get("nombre", ""),
-                    "transporte": d.get("transporte", ""),
-                })
-
-    return resultado
-
-
 def eliminar_solicitud(numero: str):
     # Buscar id
     rows = _get("solicitudes", filters={"numero": f"eq.{numero}"}, select="id")

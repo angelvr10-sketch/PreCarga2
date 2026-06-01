@@ -5,23 +5,14 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from templates_cfg import templates
 
 from core import (
-    leer_companias, leer_activos,
-    listar_solicitudes_xlsx, listar_archivos_baja,
-    leer_meta_baja,
+    listar_solicitudes_xlsx,
 )
-from core.db import listar_bajas_db
+from core.supabase_db import leer_companias_supabase, leer_activos_supabase
+from core.db import listar_bajas_db, listar_solicitudes_db
 from core.config import SOL_DIR, LOGS_DIR
 from core.auth import get_current_user, require_login
 
 router = APIRouter()
-
-
-def _baja_rows(archivos):
-    rows = []
-    for p in archivos:
-        meta = leer_meta_baja(p)
-        rows.append({"nombre": p.stem, "compania": meta["compania"], "n": meta["n"]})
-    return rows
 
 
 # ── Landing Page ─────────────────────────────────────────────
@@ -40,9 +31,7 @@ async def dashboard(request: Request):
     if redir:
         return redir
     user = get_current_user(request)
-    from core.db import listar_solicitudes_db
     sol_db = listar_solicitudes_db(limit=8)
-    baj    = list(SOL_DIR.glob("*-B.csv")) if SOL_DIR.exists() else []
     
     # Corregimos el acceso a stats para evitar el error de tupla
     res_sol = listar_solicitudes_xlsx()
@@ -50,9 +39,9 @@ async def dashboard(request: Request):
     
     stats  = {
         "solicitudes": sol_count,
-        "bajas":       len(baj),
-        "companias":   len(leer_companias()),
-        "activos":     len(leer_activos()),
+        "bajas":       len(listar_bajas_db()),
+        "companias":   len(leer_companias_supabase()),
+        "activos":     len(leer_activos_supabase()),
     }
     # Enriquecer con fecha_mod desde disco
     ultimas = []
@@ -107,10 +96,10 @@ async def bajas(request: Request):
     redir = require_login(request)
     if redir:
         return redir
-    archivos = listar_archivos_baja()
+    bajas_data = listar_bajas_db()
     return templates.TemplateResponse(request, "bajas.html", {
         "page": "bajas", "user": get_current_user(request),
-        "bajas": _baja_rows(archivos),
+        "bajas": bajas_data,
     })
 
 
@@ -122,7 +111,7 @@ async def companias(request: Request):
         return redir
     return templates.TemplateResponse(request, "companias.html", {
         "page": "companias", "user": get_current_user(request),
-        "companias": leer_companias(),
+        "companias": leer_companias_supabase(),
     })
 
 
@@ -134,7 +123,7 @@ async def activos(request: Request):
         return redir
     return templates.TemplateResponse(request, "activos.html", {
         "page": "activos", "user": get_current_user(request),
-        "activos": leer_activos(),
+        "activos": leer_activos_supabase(),
     })
 
 

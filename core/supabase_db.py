@@ -18,7 +18,7 @@ except ImportError:
     httpx = None
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
+SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
 # Headers para las peticiones REST
 HEADERS = {

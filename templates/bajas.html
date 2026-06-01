@@ -24,17 +24,17 @@
     <div style="max-height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:4px">
       {% for b in bajas %}
       <label class="sol-row" style="cursor:pointer">
-        <input type="checkbox" name="solicitudes" value="{{ b.nombre }}" checked>
+        <input type="checkbox" name="solicitudes" value="{{ b.numero }}-B">
         <div class="sol-info">
-          <div class="sol-name">{{ b.nombre }}</div>
+          <div class="sol-name">{{ b.numero }}</div>
           <div class="sol-sub">{{ b.compania or '—' }}</div>
         </div>
-        <span class="badge badge-red">{{ b.n }} persona{{ 's' if b.n != 1 else '' }}</span>
+        <span class="badge badge-red">{{ b.n_bajas }} persona{{ 's' if b.n_bajas != 1 else '' }}</span>
       </label>
       {% endfor %}
     </div>
     {% else %}
-    <p style="color:var(--muted);text-align:center;padding:24px">No hay archivos *-B.csv en /solicitudes</p>
+    <p style="color:var(--muted);text-align:center;padding:24px">No hay solicitudes con personal de baja registrado</p>
     {% endif %}
     </form>
   </div>

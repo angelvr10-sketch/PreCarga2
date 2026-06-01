@@ -1,7 +1,6 @@
 """routers/api.py — Endpoints de acción: upload, procesamiento, descarga"""
 import csv
 import io
-import json
 import uuid
 import tempfile
 import os
@@ -16,18 +15,14 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse, Red
 from core import (
     llenar_plantilla, leer_personal_de_xlsx,
     llenar_plantilla_entrada, llenar_plantilla_salidas,
-    listar_archivos_baja,
     logger, SOL_DIR, LOGS_DIR,
 )
 from core.config import RUTA_PLANTILLA_SALIDA, RUTA_PLANTILLA_ENTRADA
 from core.auth import get_current_user, puede_descargar, contar_descarga, MAX_DESCARGAS_GRATIS
+from core.db import obtener_personal_baja_db
 from core.supabase_db import upload_file_to_storage, download_file_from_storage, delete_file_from_storage
 
 router = APIRouter(prefix="/api")
-
-# Almacén temporal de BDs cargadas (en memoria, por token)
-_bd_store: dict[str, dict] = {}
-
 
 # ── Procesar PDF ──────────────────────────────────────────────
 @router.post("/procesar-pdf")
@@ -58,20 +53,48 @@ async def procesar_pdf(file: UploadFile = File(...)):
         return JSONResponse({"ok": False, "mensaje": str(e)})
 
 
+# ── Util: detectar delimitador de CSV ──────────────────────────
+def _detect_delimiter(sample: str) -> str:
+    common = {',', '\t', ';', '|'}
+    counts = {}
+    for d in common:
+        counts[d] = sample.count(d)
+    return max(counts, key=counts.get)  # type: ignore[arg-type]
+
+
 # ── Cargar BD de personal ─────────────────────────────────────
 @router.post("/cargar-bd")
 async def cargar_bd(file: UploadFile = File(...)):
     try:
         contenido = await file.read()
-        texto = contenido.decode("utf-8", errors="replace")
-        reader = csv.DictReader(io.StringIO(texto))
-        columnas = list(reader.fieldnames or [])
-        filas    = list(reader)
+
+        # Si es XLSX, convertirlo a CSV
+        if contenido[:4] == b"PK\x03\x04":
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(contenido), read_only=True, data_only=True)
+            ws = wb.active
+            filas = list(ws.iter_rows(values_only=True))
+            if not filas:
+                return JSONResponse({"ok": False, "mensaje": "El XLSX está vacío"})
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8", newline="") as tmp:
+                w = csv.writer(tmp, delimiter="\t")
+                for f in filas:
+                    w.writerow(f)
+                tmp_path = Path(tmp.name)
+            delim = "\t"
+            n_columnas = len(filas[0]) if filas else 0
+        else:
+            texto = contenido.decode("utf-8", errors="replace")
+            delim = _detect_delimiter(texto.split("\n")[0]) if texto.split("\n")[0] else ","
+            n_columnas = len(texto.split("\n")[0].split(delim)) if texto.split("\n")[0] else 0
+            with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as tmp:
+                tmp.write(contenido)
+                tmp_path = Path(tmp.name)
 
         token = str(uuid.uuid4())
-        _bd_store[token] = {"columnas": columnas, "filas": filas}
-
-        return JSONResponse({"ok": True, "token": token, "columnas": len(columnas)})
+        upload_file_to_storage("solicitudes", tmp_path, f"bd_{token}.csv")
+        tmp_path.unlink()
+        return JSONResponse({"ok": True, "token": token, "columnas": n_columnas, "delim": delim})
     except Exception as e:
         return JSONResponse({"ok": False, "mensaje": str(e)})
 
@@ -79,45 +102,71 @@ async def cargar_bd(file: UploadFile = File(...)):
 # ── Buscar bajas en BD y generar plantilla salidas ────────────
 @router.post("/buscar-bajas")
 async def buscar_bajas(
+    request: Request,
     solicitudes: list[str] = Form(...),
     bd_token:    str        = Form(...),
 ):
-    if bd_token not in _bd_store:
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "mensaje": "No autorizado"}, status_code=401)
+
+    # Descargar BD desde Storage
+    try:
+        content = download_file_from_storage("solicitudes", f"bd_{bd_token}.csv")
+    except Exception:
         return JSONResponse({"ok": False, "mensaje": "BD no encontrada — recarga el archivo CSV"})
 
-    bd = _bd_store[bd_token]
-    columnas  = bd["columnas"]
-    filas_bd  = bd["filas"]
+    sample = content.decode("utf-8", errors="replace")[:4096]
+    delim = _detect_delimiter(sample)
+    reader = csv.DictReader(io.TextIOWrapper(io.BytesIO(content), encoding="utf-8", newline="", errors="replace"), delimiter=delim)
+    columnas = list(reader.fieldnames or [])
+    filas_bd = list(reader)
 
-    # Reunir RFC/nombres de los CSV de bajas seleccionados
+    # Limpiar BD de Storage
+    try:
+        delete_file_from_storage("solicitudes", f"bd_{bd_token}.csv")
+    except Exception:
+        pass
+
+    # Reunir RFC/nombres desde Supabase (con fallback a CSV legacy)
     rfc_a_sol:    dict[str, str] = {}
     nombre_a_sol: dict[str, str] = {}
     trans_por_sol: dict[str, str] = {}
 
     for nombre_sol in solicitudes:
-        ruta_csv = SOL_DIR / f"{nombre_sol}"
-        if not ruta_csv.exists():
-            ruta_csv = SOL_DIR / f"{nombre_sol}.csv" if not nombre_sol.endswith(".csv") else ruta_csv
-        if not ruta_csv.exists():
+        num = nombre_sol.replace("-B", "") if nombre_sol.endswith("-B") else nombre_sol
+        personal_baja = obtener_personal_baja_db(num)
+
+        if not personal_baja:
+            # Fallback: leer CSV para solicitudes pre-migración
+            ruta_csv = SOL_DIR / f"{num}-B.csv"
+            if ruta_csv.exists():
+                try:
+                    with open(ruta_csv, newline="", encoding="utf-8") as f:
+                        for row in csv.DictReader(f):
+                            rfc = (row.get("rfc") or "").upper().strip()
+                            nom = (row.get("nombre") or "").upper().strip()
+                            t   = (row.get("transporte") or "").strip()
+                            if rfc: rfc_a_sol[rfc] = num
+                            if nom: nombre_a_sol[nom] = num
+                            if t and num not in trans_por_sol: trans_por_sol[num] = t
+                except Exception:
+                    pass
             continue
 
-        num = ruta_csv.stem.replace("-B", "")
-        try:
-            with open(ruta_csv, encoding="utf-8") as f:
-                for row in csv.DictReader(f):
-                    rfc = (row.get("rfc") or "").upper().strip()
-                    nom = (row.get("nombre") or "").upper().strip()
-                    t   = (row.get("transporte") or "").strip()
-                    if rfc: rfc_a_sol[rfc]    = num
-                    if nom: nombre_a_sol[nom] = num
-                    if t and num not in trans_por_sol: trans_por_sol[num] = t
-        except Exception:
-            pass
+        for p in personal_baja:
+            rfc = (p.get("rfc") or "").upper().strip()
+            nom = (p.get("nombre") or "").upper().strip()
+            t   = (p.get("transporte") or "").strip()
+            if rfc: rfc_a_sol[rfc] = num
+            if nom: nombre_a_sol[nom] = num
+            if t and num not in trans_por_sol: trans_por_sol[num] = t
 
-    col_rfc    = _detectar(columnas, ["rfc", "ficha", "curp"])
-    col_nombre = _detectar(columnas, ["nombre", "name", "trabajador"])
-    col_depto  = _detectar(columnas, ["depto", "departamento", "compania", "empresa"])
-    col_cama   = _detectar(columnas, ["cama", "cabina", "cuarto", "habitacion"])
+    col_rfc       = _detectar(columnas, ["rfc", "ficha", "curp"])
+    col_nombre    = _detectar(columnas, ["nombre", "name", "trabajador"])
+    col_depto     = _detectar(columnas, ["depto", "departamento", "compania", "empresa"])
+    col_cama      = _detectar(columnas, ["cama", "cabina", "cuarto", "habitacion"])
+    col_sol_csv   = _detectar(columnas, ["solicitud"])
 
     encontrados = []
     for fila in filas_bd:
@@ -126,7 +175,7 @@ async def buscar_bajas(
         if (vr and vr in rfc_a_sol) or (vn and vn in nombre_a_sol):
             fc = dict(fila)
             sol_num = rfc_a_sol.get(vr) or nombre_a_sol.get(vn, "")
-            fc["__solicitud__"]  = sol_num
+            fc["__solicitud__"]  = (fila.get(col_sol_csv) or "").strip() if col_sol_csv else sol_num
             fc["__transporte__"] = trans_por_sol.get(sol_num, "")
             encontrados.append(fc)
 

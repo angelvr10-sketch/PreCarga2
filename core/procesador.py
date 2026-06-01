@@ -250,12 +250,7 @@ def llenar_plantilla(ruta_pdf: Path) -> Tuple[bool, str]:
         if not personal:
             return False, "No se encontró personal en el PDF"
 
-        # Guardar CSV de bajas si hay
         personal_baja = extraer_personal_baja(ruta_pdf)
-        if personal_baja:
-            num_sol    = info.get("solicitud", ruta_pdf.stem)
-            transporte = info.get("transporte", "")
-            guardar_csv_baja(num_sol, personal_baja, transporte)
 
         wb   = openpyxl.load_workbook(RUTA_PLANTILLA)
         hoja = wb.active
@@ -326,30 +321,6 @@ def llenar_plantilla(ruta_pdf: Path) -> Tuple[bool, str]:
         msg = f"Error procesando {ruta_pdf.name}: {e}"
         logger.error(msg)
         return False, msg
-
-
-# ──────────────────────────────────────────────────────────────
-#  CSV de bajas
-# ──────────────────────────────────────────────────────────────
-
-def guardar_csv_baja(numero: str, personal: List[Dict], transporte: str = "") -> Path:
-    SOL_DIR.mkdir(parents=True, exist_ok=True)
-    ruta = SOL_DIR / f"{numero}-B.csv"
-    for p in personal:
-        p.setdefault("transporte", transporte)
-    campos = ["id", "rfc", "nombre", "libreta", "vigencia",
-              "llegada", "salida", "dias", "transporte"]
-    with open(ruta, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=campos)
-        w.writeheader()
-        w.writerows(personal)
-    logger.info(f"CSV de bajas: {ruta.name}")
-    return ruta
-
-
-def listar_archivos_baja() -> List[Path]:
-    return sorted(SOL_DIR.glob("*-B.csv"),
-                  key=lambda p: p.stat().st_mtime, reverse=True)
 
 
 def listar_solicitudes_xlsx(page: int = 1, limit: int = 20, search: Optional[str] = None) -> tuple[list[dict], int]:
@@ -431,22 +402,6 @@ def leer_meta_xlsx(ruta: Path) -> dict:
         meta["n"]     = n
         meta["fecha"] = fecha
         wb.close()
-    except Exception:
-        pass
-    return meta
-
-
-def leer_meta_baja(ruta: Path) -> dict:
-    meta = {"compania": "", "n": 0}
-    try:
-        with open(ruta, encoding="utf-8") as f:
-            meta["n"] = sum(1 for _ in csv.DictReader(f))
-        num_sol = ruta.stem.replace("-B", "")
-        xlsx = SOL_DIR / f"{num_sol}.xlsx"
-        if xlsx.exists():
-            wb = openpyxl.load_workbook(xlsx, read_only=True, data_only=True)
-            meta["compania"] = str(wb.active["E8"].value or "").strip()
-            wb.close()
     except Exception:
         pass
     return meta

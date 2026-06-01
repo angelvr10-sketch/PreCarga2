@@ -1,7 +1,7 @@
 from .procesador import (
-    llenar_plantilla, extraer_personal_baja, guardar_csv_baja,
-    listar_archivos_baja, listar_solicitudes_xlsx, leer_meta_xlsx,
-    leer_meta_baja, llenar_plantilla_salidas, llenar_plantilla_entrada,
+    llenar_plantilla, extraer_personal_baja,
+    listar_solicitudes_xlsx, leer_meta_xlsx,
+    llenar_plantilla_salidas, llenar_plantilla_entrada,
     leer_personal_de_xlsx,
 )
 from .catalogo import (
