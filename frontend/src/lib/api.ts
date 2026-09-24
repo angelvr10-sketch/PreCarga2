@@ -1,5 +1,5 @@
 const API_BASE = ''
-const REQUEST_TIMEOUT_MS = 15_000
+const REQUEST_TIMEOUT_MS = 30_000
 
 export class ApiError extends Error {
   constructor(

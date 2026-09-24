@@ -80,17 +80,52 @@ def _get(table: str, select: str = "*", filters: Optional[dict] = None,
         print(f"Error: {e}")
         raise e
 
-def _count_distinct(table: str, column: str, filters: Optional[dict] = None) -> int:
-    """Cuenta valores distintos no vacíos de una columna, paginando todas las filas."""
-    params = {"select": column, "order": column}
+def _count_rows(table: str, filters: Optional[dict] = None) -> int:
+    """Cuenta filas de una tabla Supabase en una sola petición (Prefer: count=exact)."""
+    params = {"select": "id"}
     if filters:
         for k, v in filters.items():
             params[k] = v
     url = f"{BASE}/{table}"
-    seen: set = set()
-    start = 0
+    try:
+        r = _request_with_retry(
+            "GET", url,
+            headers={**HEADERS, "Prefer": "count=exact", "Range": "0-0"},
+            params=params,
+        )
+        # Content-Range: "0-0/<total>"
+        content_range = r.headers.get("content-range", "")
+        if "/" in content_range:
+            return int(content_range.rsplit("/", 1)[1])
+        return len(r.json())
+    except Exception as e:
+        print(f"\n[DB ERROR COUNT] Table: {table} | Params: {params}")
+        print(f"Error: {e}")
+        raise e
+
+
+def _count_distinct(table: str, column: str, filters: Optional[dict] = None) -> int:
+    """Cuenta valores distintos no vacíos de una columna.
+
+    Obtiene el total con una sola petición (count=exact) y descarga las
+    páginas en paralelo para evitar N peticiones secuenciales lentas.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    params = {"select": column}
+    if filters:
+        for k, v in filters.items():
+            params[k] = v
+    url = f"{BASE}/{table}"
+
+    total = _count_rows(table, filters)
+    if total <= 0:
+        return 0
+
     page_size = 1000
-    while True:
+    starts = list(range(0, total, page_size))
+
+    def _pagina(start: int) -> list:
         headers = {**HEADERS, "Range": f"{start}-{start + page_size - 1}"}
         try:
             r = _request_with_retry("GET", url, headers=headers, params=params)
@@ -98,16 +133,16 @@ def _count_distinct(table: str, column: str, filters: Optional[dict] = None) -> 
             print(f"\n[DB ERROR DISTINCT] Table: {table} | URL: {url}")
             print(f"Error: {e}")
             raise e
-        rows = r.json()
-        if not rows:
-            break
-        for row in rows:
-            v = (row.get(column) or "").strip()
-            if v:
-                seen.add(v)
-        start += len(rows)
-        if len(rows) < page_size:
-            break
+        return r.json()
+
+    seen: set = set()
+    with ThreadPoolExecutor(max_workers=min(8, len(starts))) as ex:
+        futures = [ex.submit(_pagina, s) for s in starts]
+        for fut in as_completed(futures):
+            for row in fut.result():
+                v = (row.get(column) or "").strip()
+                if v:
+                    seen.add(v)
     return len(seen)
 
 def _post(table: str, data: dict) -> Optional[dict]:

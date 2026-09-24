@@ -328,7 +328,7 @@ def listar_solicitudes_xlsx(page: int = 1, limit: int = 20, search: Optional[str
     Lee solicitudes desde Supabase con paginación y búsqueda opcional.
     Devuelve una tupla: (lista de dicts, total_de_registros).
     """
-    from .supabase_db import _get
+    from .supabase_db import _get, _count_rows
     
     try:
         offset = (page - 1) * limit
@@ -356,12 +356,8 @@ def listar_solicitudes_xlsx(page: int = 1, limit: int = 20, search: Optional[str
         
         # 2. Obtener el total de registros para calcular las páginas
         # Si hay búsqueda, el total debe reflejar solo los resultados filtrados
-        total_params = {"select": "id"}
-        if search:
-            total_params["numero"] = f"ilike.%{search.strip()}%"
-            
-        total_rows = _get("solicitudes", **total_params) 
-        total_count = len(total_rows)
+        total_filters = {"numero": f"ilike.%{search.strip()}%"} if search else None
+        total_count = _count_rows("solicitudes", total_filters)
 
         result = []
         for r in rows:

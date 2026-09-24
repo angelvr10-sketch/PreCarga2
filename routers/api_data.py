@@ -11,7 +11,7 @@ from core import listar_solicitudes_xlsx
 from core.supabase_db import (
     leer_companias_supabase, agregar_compania_supabase, eliminar_compania_supabase,
     leer_activos_supabase, agregar_activo_supabase, eliminar_activo_supabase,
-    _get, _count_distinct,
+    _get, _count_distinct, _count_rows,
 )
 from core.db import listar_bajas_db, listar_solicitudes_db
 from core.auth import get_user_from_token, listar_usuarios
@@ -41,16 +41,18 @@ def _require_admin(request: Request):
 
 # ── Dashboard Stats ────────────────────────────────────────────
 @router.get("/dashboard/stats")
-async def dashboard_stats(request: Request):
+def dashboard_stats(request: Request):
     _require_auth(request)
     
     res = listar_solicitudes_xlsx()
     sol_count = res[1] if isinstance(res, tuple) else len(res)
+
+    hoy = date.today().isoformat()
     
     return {
         "total_solicitudes": sol_count,
         "total_personal": _count_distinct("personal", "rfc"),
-        "solicitudes_hoy": 0,
+        "solicitudes_hoy": _count_rows("solicitudes", {"fecha_llegada": f"eq.{hoy}"}),
         "altas_generadas": 0,
         "bajas_procesadas": len(listar_bajas_db()),
         "total_companias": len(leer_companias_supabase()),
@@ -102,7 +104,7 @@ def _agregar_ultimos_dias(dias: int, barco: str = "") -> tuple:
 
 
 @router.get("/dashboard/programacion-dias")
-async def programacion_dias(request: Request):
+def programacion_dias(request: Request):
     """Personas programadas (altas) por destino RPX/CPZ en los últimos 14 días."""
     _require_auth(request)
 
@@ -115,7 +117,7 @@ async def programacion_dias(request: Request):
 
 
 @router.get("/dashboard/programacion-area")
-async def programacion_area(request: Request, barco: str = ""):
+def programacion_area(request: Request, barco: str = ""):
     """Comportamiento de altas vs bajas por destino en los últimos 14 días, con filtro de barco."""
     _require_auth(request)
 
@@ -135,7 +137,7 @@ async def programacion_area(request: Request, barco: str = ""):
 
 
 @router.get("/solicitudes")
-async def solicitudes_list(request: Request, page: int = 1, search: str = ""):
+def solicitudes_list(request: Request, page: int = 1, search: str = ""):
     _require_auth(request)
     
     limit = 10
