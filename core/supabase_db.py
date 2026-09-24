@@ -80,6 +80,36 @@ def _get(table: str, select: str = "*", filters: Optional[dict] = None,
         print(f"Error: {e}")
         raise e
 
+def _count_distinct(table: str, column: str, filters: Optional[dict] = None) -> int:
+    """Cuenta valores distintos no vacíos de una columna, paginando todas las filas."""
+    params = {"select": column, "order": column}
+    if filters:
+        for k, v in filters.items():
+            params[k] = v
+    url = f"{BASE}/{table}"
+    seen: set = set()
+    start = 0
+    page_size = 1000
+    while True:
+        headers = {**HEADERS, "Range": f"{start}-{start + page_size - 1}"}
+        try:
+            r = _request_with_retry("GET", url, headers=headers, params=params)
+        except Exception as e:
+            print(f"\n[DB ERROR DISTINCT] Table: {table} | URL: {url}")
+            print(f"Error: {e}")
+            raise e
+        rows = r.json()
+        if not rows:
+            break
+        for row in rows:
+            v = (row.get(column) or "").strip()
+            if v:
+                seen.add(v)
+        start += len(rows)
+        if len(rows) < page_size:
+            break
+    return len(seen)
+
 def _post(table: str, data: dict) -> Optional[dict]:
     """POST a Supabase table. Devuelve el registro insertado o None."""
     url = f"{BASE}/{table}"

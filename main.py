@@ -32,7 +32,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import pages, api, htmx
+from routers import pages, api, htmx, api_auth, api_data
 from routers import auth as auth_router
 from routers import payments as payments_router
 from core.auth import init_db
@@ -64,4 +64,6 @@ app.include_router(auth_router.router)
 app.include_router(payments_router.router)
 app.include_router(pages.router)
 app.include_router(api.router)
+app.include_router(api_auth.router)
+app.include_router(api_data.router)
 app.include_router(htmx.router)

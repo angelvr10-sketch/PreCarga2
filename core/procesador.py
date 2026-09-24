@@ -368,13 +368,18 @@ def listar_solicitudes_xlsx(page: int = 1, limit: int = 20, search: Optional[str
             fecha_mod = "" 
             
             result.append({
-                "nombre":    r["numero"],
-                "compania":  r["compania"] or "",
-                "n":         r["n_personas"],
-                "fecha":     r["fecha_llegada"] or "",
-                "fecha_mod": fecha_mod,
+                "id":          r["id"],
+                "nombre":      r["numero"],
+                "compania":    r["compania"] or "",
+                "n":           r["n_personas"],
+                "fecha":       r["fecha_llegada"] or "",
+                "fecha_mod":   fecha_mod,
+                "procesado":   r.get("procesado") or "",
+                "tipo":        r.get("tipo") or "",
+                "archivo":     r.get("archivo") or "",
                 "tiene_bajas": bool(r["tiene_bajas"]),
-                "n_bajas":   r["n_bajas"],
+                "n_bajas":     r["n_bajas"],
+                "destino":     r.get("destinohosp") or "",
             })
         return result, total_count
     except Exception as e:
