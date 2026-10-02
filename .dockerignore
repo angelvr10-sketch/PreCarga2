@@ -5,4 +5,23 @@ __pycache__/
 .venv
 venv/
 *.db
-*.sqlite
+*.db-shm
+*.db-wal
+
+# PII y artefactos runtime: se regeneran, no deben hornearse en la imagen.
+solicitudes/
+logs/
+data/
+*.log
+
+# El frontend se compila en el Stage 1 del Dockerfile. Este contexto
+# solo necesita el codigo fuente.
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Tests y artefactos de dev
+test_*.py
+.vscode/
+.idea/
+*.tsbuildinfo

@@ -47,8 +47,18 @@ async function request<T>(
   clearTimeout(timer)
 
   if (!response.ok) {
+    // El backend responde JSON con {ok:false, mensaje} o {detail}.
+    // Sin esto el mensaje que ve el usuario es el JSON crudo.
     const text = await response.text()
-    throw new ApiError(response.status, text || response.statusText)
+    let mensaje = text || response.statusText
+    try {
+      const parsed = JSON.parse(text)
+      mensaje = parsed.mensaje || parsed.detail || parsed.error || mensaje
+      if (Array.isArray(mensaje)) mensaje = mensaje.map((m) => m.msg).join(', ')
+    } catch {
+      // No era JSON: se usa el texto tal cual.
+    }
+    throw new ApiError(response.status, mensaje)
   }
 
   const contentType = response.headers.get('content-type')

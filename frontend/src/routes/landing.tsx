@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { BrandLockup } from '@/components/brand'
 import {
-  Ship,
   Zap,
   FileText,
   ArrowUpCircle,
@@ -75,9 +75,8 @@ export default function Landing() {
   return (
     <div className="flex min-h-screen flex-col scroll-smooth">
       <header className="sticky top-0 z-50 flex items-center justify-between border-b border-border/50 bg-background/80 px-4 py-3 backdrop-blur-xl sm:px-6">
-        <a href="#inicio" className="flex items-center gap-2">
-          <Ship className="h-6 w-6 text-primary" />
-          <span className="text-lg font-semibold tracking-tight">PreCarga SHAT</span>
+        <a href="#inicio" className="flex items-center">
+          <BrandLockup className="h-8" />
         </a>
 
         <nav className="hidden items-center gap-6 md:flex">
@@ -155,7 +154,9 @@ export default function Landing() {
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/15 via-transparent to-transparent" />
 
           <div className="relative">
-            <Badge variant="accent" className="gap-1.5 px-3 py-1 text-[12.5px]">
+            <BrandLockup className="mx-auto h-16 sm:h-20" />
+
+            <Badge variant="accent" className="mt-8 gap-1.5 px-3 py-1 text-[12.5px]">
               <Zap className="h-3.5 w-3.5" />
               Sistema de Gestión de Activos
             </Badge>
@@ -222,12 +223,12 @@ export default function Landing() {
 
         <section id="acerca" className="scroll-mt-20 border-t border-border/50 px-6 py-20">
           <div className="mx-auto max-w-6xl">
-            <h2 className="text-center text-3xl font-bold tracking-tight">Acerca de PreCarga SHAT</h2>
+            <h2 className="text-center text-3xl font-bold tracking-tight">Acerca de PreCarga</h2>
 
             <div className="mt-12 grid items-center gap-12 lg:grid-cols-2">
               <div>
                 <p className="mb-4 text-muted-foreground">
-                  Precarga SHAT es una herramienta especializada diseñada para optimizar el
+                  Precarga es una herramienta especializada diseñada para optimizar el
                   proceso de gestión de activos en el sector energético. Nuestro sistema
                   automatiza la extracción de datos de documentos PDF y facilita la generación de
                   reportes en formato Excel.
@@ -239,7 +240,7 @@ export default function Landing() {
                 </p>
                 <p className="mb-4 text-muted-foreground">
                   Con una interfaz moderna y amigable, acceso multiusuario con roles
-                  diferenciados, y generación automática de documentos, Precarga SHAT es la
+                  diferenciados, y generación automática de documentos, Precarga es la
                   solución ideal para la gestión eficiente de activos empresariales.
                 </p>
 
@@ -273,7 +274,7 @@ export default function Landing() {
       </main>
 
       <footer className="border-t border-border/50 px-6 py-6 text-center text-sm text-muted-foreground">
-        © 2026 PreCarga SHAT · Desarrollado por <span className="text-primary">Angel Valenzuela</span>
+        © 2026 PreCarga · Desarrollado por <span className="text-primary">Angel Valenzuela</span>
       </footer>
     </div>
   )

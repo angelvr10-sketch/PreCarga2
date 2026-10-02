@@ -13,3 +13,17 @@ frontend/dist/
 frontend/.env
 
 *.tsbuildinfo
+
+# Datos locales y artefactos runtime: nunca deben entrar al repo.
+# solicitudes/ y logs/ contienen PII (RFC, nombre, libretas) y se
+# regeneran en cada despliegue. Fly usa disco efimera.
+solicitudes/
+logs/
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Credenciales locales
+.env.*
+!.env.example

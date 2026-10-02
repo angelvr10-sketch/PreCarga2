@@ -20,7 +20,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { activosApi } from '@/lib/activos'
-import { Trash2, Plus, Loader2, Package } from 'lucide-react'
+import { Trash2, Plus, Loader2, Package, AlertCircle } from 'lucide-react'
 
 interface ActivoRecord {
   id?: string
@@ -32,7 +32,7 @@ export default function Activos() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [nombre, setNombre] = useState('')
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['activos'],
     queryFn: () => activosApi.list(),
   })
@@ -94,6 +94,21 @@ export default function Activos() {
     if (nombre) {
       createMutation.mutate()
     }
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col space-y-6">
+        <h1 className="text-2xl font-bold tracking-tight">Catálogo de Activos</h1>
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <p className="text-muted-foreground">Error al cargar los activos</p>
+            <Button onClick={() => refetch()}>Reintentar</Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (

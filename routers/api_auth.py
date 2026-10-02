@@ -42,7 +42,7 @@ def _serialize_user(user: dict) -> dict:
         "nombre": user.get("username", user.get("nombre", "")),
         "email": user.get("email", ""),
         "admin": user.get("rol") == "admin",
-        "verificado": user.get("verificado", False),
+        "verificado": user.get("email_verificado", user.get("verificado", False)),
         "created_at": user.get("creado", ""),
     }
 

@@ -1,7 +1,26 @@
 """core/db.py — Base de datos Supabase para metadatos de solicitudes."""
 import os
+import re
 from datetime import datetime
 from core.supabase_db import _get, _post, _delete, _patch, HAS_HTTPX
+
+
+def normalizar_fecha_iso(valor) -> str:
+    """Convierte fechas sueltas a ISO yyyy-mm-dd (dd/mm/yyyy, dd-mm-yyyy, ISO...)."""
+    if not valor:
+        return ""
+    s = str(valor).strip()[:10]
+    m = re.match(r"^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$", s)
+    if m:
+        d, mes, anio = m.groups()
+        if 1 <= int(d) <= 31 and 1 <= int(mes) <= 12:
+            return f"{anio}-{int(mes):02d}-{int(d):02d}"
+        return s
+    if re.match(r"^\d{4}", s):
+        partes = re.split(r"[/\-]", s)
+        if len(partes) == 3 and 1 <= int(partes[1]) <= 12:
+            return f"{partes[0]}-{int(partes[1]):02d}-{int(partes[2]):02d}"
+    return s
 
 
 # ──────────────────────────────────────────────────────────────
@@ -31,7 +50,7 @@ def guardar_solicitud(info: dict, personal_sube: list, personal_baja: list,
     Devuelve el id de la solicitud.
     """
     procesado = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    fecha_llegada = personal_sube[0]["llegada"][:10] if personal_sube else ""
+    fecha_llegada = normalizar_fecha_iso(personal_sube[0]["llegada"]) if personal_sube else ""
 
     # Buscar si ya existe
     existentes = _get("solicitudes", filters={"numero": f"eq.{info.get('solicitud', 'SIN_NUM')}"},
@@ -59,6 +78,17 @@ def guardar_solicitud(info: dict, personal_sube: list, personal_baja: list,
         "n_bajas": len(personal_baja),
         "archivo": archivo,
         "procesado": procesado,
+        "destinohosp": info.get("destinohosp") or "",
+        "elepep": info.get("elepep") or "",
+        "progpre": info.get("progpre") or "",
+        "cge": info.get("cge") or "",
+        "cta": info.get("cta") or "",
+        "pos": info.get("pos") or "",
+        "nombre_solicita": info.get("nombre_solicita") or "",
+        "ficha_solicita": info.get("ficha_solicita") or "",
+        "nombre_autoriza": info.get("nombre_autoriza") or "",
+        "ficha_autoriza": info.get("ficha_autoriza") or "",
+        "razonsocial": info.get("razonsocial") or "",
     })
 
     if not nueva_sol:
@@ -128,23 +158,27 @@ def obtener_solicitud(numero: str) -> dict | None:
     return dict(rows[0]) if rows else None
 
 
-def obtener_personal_sube(numero: str) -> list[dict]:
+def _obtener_personal(numero: str, tipo: str) -> list[dict]:
     rows = _get("solicitudes", filters={"numero": f"eq.{numero}"}, select="id")
     if not rows:
         return []
     sol_id = rows[0]["id"]
-    pers = _get("personal", filters={"solicitud_id": f"eq.{sol_id}", "tipo": "eq.sube"})
+    pers = _get("personal", filters={"solicitud_id": f"eq.{sol_id}", "tipo": f"eq.{tipo}"})
     return [dict(r) for r in pers]
+
+
+def obtener_personal_sube(numero: str) -> list[dict]:
+    return _obtener_personal(numero, "sube")
 
 
 def obtener_personal_baja_db(numero: str) -> list[dict]:
-    rows = _get("solicitudes", filters={"numero": f"eq.{numero}"}, select="id")
-    if not rows:
-        return []
-    sol_id = rows[0]["id"]
-    pers = _get("personal", filters={"solicitud_id": f"eq.{sol_id}", "tipo": "eq.baja"},
-                select="rfc,nombre,transporte")
-    return [dict(r) for r in pers]
+    pers = _obtener_personal(numero, "baja")
+    return [{"rfc": p.get("rfc", ""), "nombre": p.get("nombre", ""),
+             "transporte": p.get("transporte", "")} for p in pers]
+
+
+def obtener_personal_baja(numero: str) -> list[dict]:
+    return _obtener_personal(numero, "baja")
 
 
 def eliminar_solicitud(numero: str):

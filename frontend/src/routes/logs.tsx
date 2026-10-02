@@ -2,13 +2,34 @@ import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { adminApi } from '@/lib/admin'
-import { Download, FileText } from 'lucide-react'
+import { Download, FileText, AlertCircle } from 'lucide-react'
 
 export default function Logs() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['logs'],
     queryFn: () => adminApi.getLogs(),
   })
+
+  if (isError) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold tracking-tight">Logs del Sistema</h1>
+          <Button onClick={() => window.open('/api/descargar-log', '_blank')}>
+            <Download className="mr-2 h-4 w-4" />
+            Descargar Log
+          </Button>
+        </div>
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <p className="text-muted-foreground">Error al cargar los logs</p>
+            <Button onClick={() => refetch()}>Reintentar</Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

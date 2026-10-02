@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import {
   createRootRouteWithContext,
   createRoute,
@@ -13,6 +14,7 @@ interface RouterContext {
     isAuthenticated: boolean
     isLoading: boolean
     user: Usuario | null
+    whenReady: () => Promise<void>
   }
 }
 
@@ -24,42 +26,63 @@ const protectedLayout = createRoute({
   getParentRoute: () => rootRoute,
   id: 'protected',
   component: AppLayout,
-  beforeLoad: ({ context }) => {
-    if (context.auth.isLoading) return
+  beforeLoad: async ({ context }) => {
+    // ESPERA a que /api/auth/me resuelva. Antes devolvia temprano si
+    // isLoading, lo que dejaba entrar a rutas protegidas sin sesion
+    // durante la carga (y en un refresh duro se veía un dashboard roto).
+    await context.auth.whenReady()
     if (!context.auth.isAuthenticated) {
       throw redirect({ to: '/login' })
     }
   },
 })
 
-// Routes
-import Landing from '@/routes/landing'
-import Login from '@/routes/login'
-import Registro from '@/routes/registro'
-import Verificar from '@/routes/verificar'
-import Dashboard from '@/routes/dashboard'
-import Procesar from '@/routes/procesar'
-import Altas from '@/routes/altas'
-import Bajas from '@/routes/bajas'
-import Companias from '@/routes/companias'
-import Activos from '@/routes/activos'
-import Logs from '@/routes/logs'
-import AdminUsuarios from '@/routes/admin-usuarios'
-import Planes from '@/routes/planes'
-import Checkout from '@/routes/checkout'
-import StripeSuccess from '@/routes/stripe-success'
-import StripeCancel from '@/routes/stripe-cancel'
+const Landing = lazy(() => import('@/routes/landing'))
+const Login = lazy(() => import('@/routes/login'))
+const Registro = lazy(() => import('@/routes/registro'))
+const Verificar = lazy(() => import('@/routes/verificar'))
+const Dashboard = lazy(() => import('@/routes/dashboard'))
+const Procesar = lazy(() => import('@/routes/procesar'))
+const Altas = lazy(() => import('@/routes/altas'))
+const Bajas = lazy(() => import('@/routes/bajas'))
+const Companias = lazy(() => import('@/routes/companias'))
+const Activos = lazy(() => import('@/routes/activos'))
+const Logs = lazy(() => import('@/routes/logs'))
+const AdminUsuarios = lazy(() => import('@/routes/admin-usuarios'))
+const Planes = lazy(() => import('@/routes/planes'))
+const Checkout = lazy(() => import('@/routes/checkout'))
+const StripeSuccess = lazy(() => import('@/routes/stripe-success'))
+const StripeCancel = lazy(() => import('@/routes/stripe-cancel'))
+
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        Cargando...
+      </div>
+    </div>
+  )
+}
+
+function LazyRoute({ component: Component }: { component: React.LazyExoticComponent<React.ComponentType> }) {
+  return (
+    <Suspense fallback={<RouteFallback />}>
+      <Component />
+    </Suspense>
+  )
+}
 
 const landingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  component: Landing,
+  component: () => <LazyRoute component={Landing} />,
 })
 
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
-  component: Login,
+  component: () => <LazyRoute component={Login} />,
   beforeLoad: ({ context }) => {
     if (context.auth.isAuthenticated) throw redirect({ to: '/dashboard' })
   },
@@ -68,85 +91,85 @@ const loginRoute = createRoute({
 const registroRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/registro',
-  component: Registro,
+  component: () => <LazyRoute component={Registro} />,
 })
 
 const verificarRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/verificar',
-  component: Verificar,
+  component: () => <LazyRoute component={Verificar} />,
 })
 
 const dashboardRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/dashboard',
-  component: Dashboard,
+  component: () => <LazyRoute component={Dashboard} />,
 })
 
 const procesarRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/procesar',
-  component: Procesar,
+  component: () => <LazyRoute component={Procesar} />,
 })
 
 const altasRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/altas',
-  component: Altas,
+  component: () => <LazyRoute component={Altas} />,
 })
 
 const bajasRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/bajas',
-  component: Bajas,
+  component: () => <LazyRoute component={Bajas} />,
 })
 
 const companiasRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/companias',
-  component: Companias,
+  component: () => <LazyRoute component={Companias} />,
 })
 
 const activosRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/activos',
-  component: Activos,
+  component: () => <LazyRoute component={Activos} />,
 })
 
 const logsRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/logs',
-  component: Logs,
+  component: () => <LazyRoute component={Logs} />,
 })
 
 const adminUsuariosRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/admin/usuarios',
-  component: AdminUsuarios,
+  component: () => <LazyRoute component={AdminUsuarios} />,
 })
 
 const planesRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/planes',
-  component: Planes,
+  component: () => <LazyRoute component={Planes} />,
 })
 
 const checkoutRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/checkout',
-  component: Checkout,
+  component: () => <LazyRoute component={Checkout} />,
 })
 
 const stripeSuccessRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/stripe/success',
-  component: StripeSuccess,
+  component: () => <LazyRoute component={StripeSuccess} />,
 })
 
 const stripeCancelRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/stripe/cancel',
-  component: StripeCancel,
+  component: () => <LazyRoute component={StripeCancel} />,
 })
 
 const routeTree = rootRoute.addChildren([
@@ -177,6 +200,9 @@ export const router = createRouter({
       isAuthenticated: false,
       isLoading: true,
       user: null,
+      // Se reemplaza en cuanto monta <RouterProvider context={...}>.
+      // Antes de eso, resolver siempre (no bloquear).
+      whenReady: () => Promise.resolve(),
     },
   },
 })

@@ -2,7 +2,7 @@ from .procesador import (
     llenar_plantilla, extraer_personal_baja,
     listar_solicitudes_xlsx, leer_meta_xlsx,
     llenar_plantilla_salidas, llenar_plantilla_entrada,
-    leer_personal_de_xlsx,
+    leer_personal_de_xlsx, generar_plantilla_desde_bd,
 )
 from .catalogo import (
     leer_companias, guardar_companias, obtener_nombre_compania,

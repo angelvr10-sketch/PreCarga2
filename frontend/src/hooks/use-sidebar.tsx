@@ -12,7 +12,7 @@ interface SidebarContextValue {
 
 const SidebarContext = createContext<SidebarContextValue | null>(null)
 
-const STORAGE_KEY = 'shat:sidebar-collapsed'
+const STORAGE_KEY = 'precarga:sidebar-collapsed'
 
 function isDesktop() {
   return typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches

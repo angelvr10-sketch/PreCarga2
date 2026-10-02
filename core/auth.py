@@ -13,6 +13,7 @@ from fastapi.responses import RedirectResponse
 
 from core.supabase_db import (
     _get, _post, _delete, _patch, verificar_conexion, _now,
+    SUPABASE_URL, KEY_TIPO,
     HAS_HTTPX, httpx
 )
 
@@ -21,7 +22,7 @@ MAX_DESCARGAS_GRATIS = 30
 
 # Configuracion de email via Resend (debe estar en .env)
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-FROM_EMAIL = os.getenv("FROM_EMAIL", "Precarga SHAT <noreply@precargashat.com>")
+FROM_EMAIL = os.getenv("FROM_EMAIL", "Precarga <noreply@precarga.com>")
 
 # Rate limiting: max 3 registros por IP en 24h
 MAX_REGISTROS_POR_IP = 3
@@ -79,13 +80,20 @@ def init_db():
         raise RuntimeError("httpx no esta instalado. pip install httpx")
 
     # Verificar que Supabase esta configurado
+    print(f"Supabase: {SUPABASE_URL or '(sin URL)'} | clave={KEY_TIPO}")
     if not verificar_conexion():
-        print("WARNING: No se pudo conectar a Supabase. Verifica SUPABASE_URL y SUPABASE_KEY")
+        print("WARNING: No se pudo conectar a Supabase. Verifica SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY")
         return
 
-    # Crear admin por defecto si no existe
-    existing = _get("usuarios", filters={"username": "eq.admin"})
-    if not existing:
+    # Crear admin por defecto si no existe.
+    # Un fallo aqui no debe tumbar el servidor: la app puede seguir sirviendo
+    # login y el admin se puede crear despues a mano.
+    try:
+        existing = _get("usuarios", filters={"username": "eq.admin"})
+        if existing:
+            print("Conexion a Supabase exitosa")
+            return
+
         _post("usuarios", {
             "username": "admin",
             "password": _hash("admin123"),
@@ -103,8 +111,10 @@ def init_db():
                 "creado": _now()
             })
         print("Admin creado por defecto: admin / admin123")
-    else:
-        print("Conexion a Supabase exitosa")
+    except Exception as e:
+        print(f"\nERROR: no se pudo inicializar el usuario admin en Supabase: {e}")
+        print("Si el mensaje menciona 'row-level security', agrega "
+              "SUPABASE_SERVICE_ROLE_KEY al .env (la anon key no puede escribir).")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -181,7 +191,8 @@ def get_user_from_token(token: Optional[str]) -> Optional[dict]:
     uid = sesiones[0]["usuario_id"]
 
     # Obtener usuario con su suscripcion
-    rows = _get("usuarios", filters={"id": f"eq.{uid}"}, select="id,username,rol,descargas_usadas")
+    rows = _get("usuarios", filters={"id": f"eq.{uid}"},
+                select="id,username,email,rol,activo,email_verificado,creado,descargas_usadas")
     if not rows:
         return None
 
@@ -343,7 +354,7 @@ def enviar_email(to: str, subject: str, body: str) -> bool:
 
 def enviar_codigo_verificacion(email: str, codigo: str) -> bool:
     """Envia el código de verificación al email del usuario."""
-    subject = "Código de verificación - Precarga SHAT"
+    subject = "Código de verificación - Precarga"
     body = f"""
 Hola,
 
@@ -356,7 +367,7 @@ Este código expira en 30 minutos.
 Si no solicitaste este registro, ignora este mensaje.
 
 ---
-Precarga SHAT
+Precarga
 """
     return enviar_email(email, subject, body)
 

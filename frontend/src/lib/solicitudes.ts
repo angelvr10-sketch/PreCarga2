@@ -11,11 +11,11 @@ export const solicitudesApi = {
 
   dashboard: () => api.get<DashboardStats>('/api/dashboard/stats'),
 
-  programacionDias: () => api.get<ProgramacionDias>('/api/dashboard/programacion-dias'),
+  programacionDias: (dias = 14) => api.get<ProgramacionDias>(`/api/dashboard/programacion-dias?dias=${dias}`),
 
-  programacionArea: (barco = '') =>
+  programacionArea: (dias = 14, barco = '') =>
     api.get<ProgramacionArea>(
-      `/api/dashboard/programacion-area${barco ? `?barco=${encodeURIComponent(barco)}` : ''}`,
+      `/api/dashboard/programacion-area?dias=${dias}${barco ? `&barco=${encodeURIComponent(barco)}` : ''}`,
     ),
 
   procesarPdf: (file: File) => {

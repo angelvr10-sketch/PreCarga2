@@ -1,4 +1,4 @@
-import { StrictMode } from 'react'
+import { StrictMode, useMemo } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
@@ -18,25 +18,21 @@ const queryClient = new QueryClient({
 })
 
 function InnerApp() {
-  const { isAuthenticated, isLoading, user } = useAuth()
+  const { isAuthenticated, isLoading, user, whenReady } = useAuth()
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-          Cargando...
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <RouterProvider
-      router={router}
-      context={{ auth: { isAuthenticated, isLoading, user } }}
-    />
+  // El contexto se memoiza: sin esto, cada render de AuthProvider le
+  // pasa un objeto nuevo a RouterProvider y se pierde la memoizacion
+  // del router entero.
+  const context = useMemo(
+    () => ({ auth: { isAuthenticated, isLoading, user, whenReady } }),
+    [isAuthenticated, isLoading, user, whenReady],
   )
+
+  // NO se bloquea el render esperando a auth. El guard de
+  // protectedLayout.beforeLoad se encarga, asi que las rutas publicas
+  // (/, /login, /registro) pintan de inmediato y los chunks lazy
+  // empiezan a descargarse en paralelo con /api/auth/me.
+  return <RouterProvider router={router} context={context} />
 }
 
 function App() {

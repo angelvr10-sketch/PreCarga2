@@ -20,7 +20,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { companiasApi } from '@/lib/companias'
-import { Trash2, Plus, Loader2, Building2 } from 'lucide-react'
+import { Trash2, Plus, Loader2, Building2, AlertCircle } from 'lucide-react'
 
 interface CompaniaRecord {
   id?: string
@@ -34,7 +34,7 @@ export default function Companias() {
   const [razonSocial, setRazonSocial] = useState('')
   const [nombreCorto, setNombreCorto] = useState('')
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['companias'],
     queryFn: () => companiasApi.list(),
   })
@@ -101,6 +101,21 @@ export default function Companias() {
     if (razonSocial && nombreCorto) {
       createMutation.mutate()
     }
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col space-y-6">
+        <h1 className="text-2xl font-bold tracking-tight">Catálogo de Compañías</h1>
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <p className="text-muted-foreground">Error al cargar las compañías</p>
+            <Button onClick={() => refetch()}>Reintentar</Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (

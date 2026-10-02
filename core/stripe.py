@@ -60,8 +60,8 @@ def crear_checkout_session(usuario_id: int, username: str) -> Dict[str, Any]:
             "price_data": {
                 "currency": STRIPE_CURRENCY,
                 "product_data": {
-                    "name": "Suscripcion 7 dias - Precarga SHAT",
-                    "description": "Acceso completo al sistema Precarga SHAT por 7 dias",
+                    "name": "Suscripcion 7 dias - Precarga",
+                    "description": "Acceso completo al sistema Precarga por 7 dias",
                 },
                 "unit_amount": STRIPE_PRICE,  # En centavos
             },

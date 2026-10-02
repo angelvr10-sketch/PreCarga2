@@ -18,7 +18,37 @@ except ImportError:
     httpx = None
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+
+# ──────────────────────────────────────────────────────────────
+#  Seleccion de la clave
+# ──────────────────────────────────────────────────────────────
+# El backend SIEMPRE usa la service_role key, por dos motivos:
+#
+#   1. Esta app NO usa Supabase Auth: implementa su propia autenticacion
+#      (bcrypt + tabla 'sesiones'), asi que las RLS no aportan nada.
+#   2. Con la anon/publishable key el RLS rompe el arranque de dos formas:
+#      - bloquea los INSERT  -> PostgREST devuelve 401 con codigo 42501
+#        ("new row violates row-level security policy"), un 401 que NO
+#        significa token invalido;
+#      - filtra los SELECT   -> las tablas devuelven [] en vez de error, asi
+#        que init_db cree que el admin no existe e intenta recrearlo.
+#
+# La service_role key NUNCA debe salir del backend: no se manda al frontend
+# y no se usa en URLs publicas (ver get_public_url).
+def _elegir_clave() -> tuple[str, str]:
+    candidatos = (
+        ("service_role", os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")),
+        ("service_role", os.getenv("SUPABASE_SERVICE_KEY", "")),
+        ("anon", os.getenv("SUPABASE_ANON_KEY", "")),
+        ("anon", os.getenv("SUPABASE_KEY", "")),
+    )
+    for etiqueta, valor in candidatos:
+        valor = (valor or "").strip().strip('"').strip("'")
+        if valor:
+            return valor, etiqueta
+    return "", "ninguna"
+
+SUPABASE_KEY, KEY_TIPO = _elegir_clave()
 
 # Headers para las peticiones REST
 HEADERS = {
@@ -31,28 +61,59 @@ HEADERS = {
 BASE = f"{SUPABASE_URL}/rest/v1"
 
 # Configuramos un timeout más generoso para evitar errores de handshake en redes inestables
-TIMEOUT_CONFIG = 30.0 
+TIMEOUT_CONFIG = 30.0
 MAX_RETRIES = 3
+RETRY_BASE_SEGONDS = 1
 
 def _now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+def _status_error(response) -> "httpx.HTTPStatusError":
+    """Convierte la respuesta en excepcion incluyendo el mensaje de Supabase.
+
+    httpx solo pone "Client error '401 Unauthorized'" en el traceback, pero
+    el cuerpo de PostgREST es donde vive la causa real (RLS, columna inexistente,
+    violacion de FK...). Sin esto el error de arranque es inaccionable.
+    """
+    detalle = " ".join(response.text.split())[:500] or "<sin cuerpo>"
+    return httpx.HTTPStatusError(
+        f"{response.status_code} {response.reason_phrase} | Supabase: {detalle}",
+        request=response.request,
+        response=response,
+    )
+
+
 def _request_with_retry(method, url, **kwargs):
-    """Wrapper para realizar peticiones con reintentos en caso de Timeout o SSL Errors."""
+    """Wrapper para realizar peticiones con reintentos en caso de Timeout o SSL Errors.
+
+    Reintenta errores de transporte y tambien 5xx / 429 de PostgREST. Los 4xx
+    no se reintentan: son deterministas y solo gastarian tiempo.
+    """
     if not httpx:
         raise RuntimeError("httpx no esta instalado. Ejecuta: pip install httpx")
-    
+
     last_exception = None
     for attempt in range(MAX_RETRIES):
         try:
             # Usamos un timeout explícito
             response = httpx.request(method, url, timeout=TIMEOUT_CONFIG, **kwargs)
-            response.raise_for_status()
+
+            if response.status_code >= 500 or response.status_code == 429:
+                last_exception = _status_error(response)
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(RETRY_BASE_SEGONDS * (attempt + 1))
+                    continue
+                raise last_exception
+
+            if response.status_code >= 400:
+                raise _status_error(response)
+
             return response
         except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError) as e:
             last_exception = e
-            time.sleep(1 * (attempt + 1)) # Espera exponencial simple
-    
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(RETRY_BASE_SEGONDS * (attempt + 1))  # Espera simple
+
     raise last_exception
 
 # ──────────────────────────────────────────────────────────────
@@ -189,12 +250,32 @@ def _exec_sql(sql: str):
     pass
 
 def verificar_conexion() -> bool:
-    """Verifica que Supabase este accesible y las tablas existan."""
+    """Verifica que Supabase este accesible y que la clave sirva para LEER.
+
+    Ojo: con la anon/publishable key y RLS activo los SELECT devuelven 200
+    con [] (0 filas visibles, no error), asi que un GET 200 NO prueba que la
+    clave sirva. Por eso el diagnostico de escritura vive en init_db().
+    """
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        print("ERROR: falta SUPABASE_URL o la clave de Supabase en .env")
+        return False
+
     try:
-        # Petición simple para testear conexión
-        _request_with_retry("GET", f"{BASE}/usuarios", headers={"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}, params={"select": "id"})
+        r = _request_with_retry(
+            "GET", f"{BASE}/usuarios",
+            headers={k: v for k, v in HEADERS.items() if k != "Prefer"},
+            params={"select": "id", "limit": 1},
+        )
+        filas = len(r.json()) if r.status_code == 200 else 0
+        if filas == 0:
+            print(
+                f"AVISO: la clave ({KEY_TIPO}) responde pero la tabla 'usuarios' "
+                "devuelve 0 filas. Si esperabas usuarios, casi seguro las RLS "
+                "estan filtrandolos: configura SUPABASE_SERVICE_ROLE_KEY."
+            )
         return True
-    except Exception:
+    except Exception as e:
+        print(f"\n[DB ERROR CONEXION] {e}")
         return False
 
 # ──────────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@ from .config import (
     RUTA_PLANTILLA_ENTRADA, RUTA_ACTIVOS, MAPEO_ACTIVOS
 )
 from .catalogo import obtener_nombre_compania, leer_activos
-from .db import guardar_solicitud
+from .db import guardar_solicitud, obtener_solicitud, obtener_personal_sube, obtener_personal_baja
 from datetime import datetime
 
 
@@ -111,7 +111,7 @@ def extraer_personal_baja(ruta: Path) -> List[Dict]:
 
 def extraer_datos_solicitud(ruta: Path) -> Dict:
     """Extrae metadatos del encabezado del PDF."""
-    info: Dict = {"nombre_compania": "SIN NOMBRE", "destinohosp": "None",
+    info: Dict = {"nombre_compania": "SIN NOMBRE", "destinohosp": "",
                   "activoA": False, "activoS": False}
     try:
         with pdfplumber.open(ruta) as pdf:
@@ -133,8 +133,9 @@ def extraer_datos_solicitud(ruta: Path) -> Dict:
                             info["contrato"] = palabra
                             break
 
-            # Destino
-            info["destinohosp"] = "RPX" if "HOSP: RPX" in texto else "None"
+            # Destino (RPX, CPZ u otro código tras "HOSP:")
+            m_dest = re.search(r"HOSP:\s*([A-Z0-9]+)", texto, re.IGNORECASE)
+            info["destinohosp"] = (m_dest.group(1) if m_dest else "").upper()
 
             # Activos
             cadena = " ".join(lineas[5:7]) if len(lineas) > 6 else ""
@@ -236,6 +237,54 @@ def _buscar_activos(texto: str, lista: List[str]) -> Tuple[Optional[str], Option
 #  Generador de plantilla principal (solicitud → xlsx)
 # ──────────────────────────────────────────────────────────────
 
+def _llenar_hoja_plantilla(hoja, info: Dict, personal: List[Dict],
+                           personal_baja: List[Dict]) -> List[str]:
+    """Llena la hoja activa de la plantilla de solicitud. Devuelve advertencias."""
+    quitar_celdas_combinadas(hoja)
+    limpiar_celdas(hoja, "A15")
+
+    fila_inicial = 15
+    for i, p in enumerate(personal, start=fila_inicial):
+        hoja[f"A{i}"] = i - fila_inicial + 1
+        hoja[f"C{i}"] = p.get("rfc", "")
+        hoja[f"D{i}"] = p.get("nombre", "")
+        hoja[f"G{i}"] = p.get("libreta", "")
+        hoja[f"H{i}"] = p.get("vigencia", "")
+        hoja[f"I{i}"] = p.get("llegada", "")
+        hoja[f"J{i}"] = p.get("salida", "")
+        hoja[f"K{i}"] = p.get("dias", "")
+
+    fila_firma = len(personal) + fila_inicial + 3
+    hoja[f"C{fila_firma}"].value   = info.get("nombre_solicita", "")
+    hoja[f"C{fila_firma+1}"].value = info.get("ficha_solicita", "")
+    hoja[f"I{fila_firma}"].value   = info.get("nombre_autoriza", "")
+    hoja[f"I{fila_firma+1}"].value = info.get("ficha_autoriza", "")
+
+    hoja["A11"].value = info.get("progpre", "")
+    hoja["J1"].value  = info.get("solicitud", "")
+    hoja["F11"].value = info.get("elepep", "")
+    hoja["G11"].value = "PEF"
+    hoja["H11"].value = info.get("pos", "")
+    hoja["I11"].value = info.get("cge", "")
+    hoja["J11"].value = info.get("cta", "")
+    hoja["A8"].value  = info.get("tipo", "")
+    hoja["G8"].value  = info.get("contrato", "")
+
+    if info.get("razonsocial"):
+        hoja["E8"].value = obtener_nombre_compania(info["razonsocial"])
+
+    errores = []
+    if info.get("activoA"):
+        hoja["E6"].value = info["activoA"]
+    else:
+        errores.append("Activo solicitante no encontrado")
+    if info.get("activoS"):
+        hoja["H6"].value = info["activoS"]
+    else:
+        errores.append("Activo autorizador no encontrado")
+    return errores
+
+
 def llenar_plantilla(ruta_pdf: Path) -> Tuple[bool, str]:
     """Procesa un PDF y genera el Excel de solicitud."""
     try:
@@ -255,54 +304,13 @@ def llenar_plantilla(ruta_pdf: Path) -> Tuple[bool, str]:
         wb   = openpyxl.load_workbook(RUTA_PLANTILLA)
         hoja = wb.active
 
-        quitar_celdas_combinadas(hoja)
-        limpiar_celdas(hoja, "A15")
-
-        fila_inicial = 15
-        for i, p in enumerate(personal, start=fila_inicial):
-            hoja[f"A{i}"] = p["id"]
-            hoja[f"C{i}"] = p["rfc"]
-            hoja[f"D{i}"] = p["nombre"]
-            hoja[f"G{i}"] = p["libreta"]
-            hoja[f"H{i}"] = p["vigencia"]
-            hoja[f"I{i}"] = p["llegada"]
-            hoja[f"J{i}"] = p["salida"]
-            hoja[f"K{i}"] = p["dias"]
-
-        fila_firma = len(personal) + fila_inicial + 3
-        hoja[f"C{fila_firma}"].value   = info.get("nombre_solicita", "")
-        hoja[f"C{fila_firma+1}"].value = info.get("ficha_solicita", "")
-        hoja[f"I{fila_firma}"].value   = info.get("nombre_autoriza", "")
-        hoja[f"I{fila_firma+1}"].value = info.get("ficha_autoriza", "")
-
-        hoja["A11"].value = info.get("progpre", "")
-        hoja["J1"].value  = info.get("solicitud", "")
-        hoja["F11"].value = info.get("elepep", "")
-        hoja["G11"].value = "PEF"
-        hoja["H11"].value = info.get("pos", "")
-        hoja["I11"].value = info.get("cge", "")
-        hoja["J11"].value = info.get("cta", "")
-        hoja["A8"].value  = info.get("tipo", "")
-        hoja["G8"].value  = info.get("contrato", "")
-
-        if "razonsocial" in info:
-            hoja["E8"].value = obtener_nombre_compania(info["razonsocial"])
-
-        errores = []
-        if info["activoA"]:
-            hoja["E6"].value = info["activoA"]
-        else:
-            errores.append("Activo solicitante no encontrado")
-        if info["activoS"]:
-            hoja["H6"].value = info["activoS"]
-        else:
-            errores.append("Activo autorizador no encontrado")
+        errores = _llenar_hoja_plantilla(hoja, info, personal, personal_baja)
 
         nombre_salida = f"{info.get('solicitud', 'SIN_NUM')}.xlsx"
         ruta_salida   = SOL_DIR / nombre_salida
         wb.save(ruta_salida)
 
-        # Guardar metadatos en SQLite para listado rápido
+        # Guardar metadatos en la BD para listado rápido
         compania_corta = obtener_nombre_compania(info.get("razonsocial", "")) \
                          if "razonsocial" in info else ""
         info["compania_corta"] = compania_corta
@@ -321,6 +329,57 @@ def llenar_plantilla(ruta_pdf: Path) -> Tuple[bool, str]:
         msg = f"Error procesando {ruta_pdf.name}: {e}"
         logger.error(msg)
         return False, msg
+
+
+def generar_plantilla_desde_bd(numero: str) -> Optional[io.BytesIO]:
+    """Regenera el xlsx de una solicitud usando SOLO datos de la BD.
+    Devuelve el archivo en memoria, o None si no hay plantilla/personal."""
+    try:
+        if not RUTA_PLANTILLA.exists():
+            return None
+
+        sol = obtener_solicitud(numero)
+        if not sol:
+            return None
+
+        info = {
+            "solicitud": sol.get("numero", numero),
+            "compania": sol.get("compania", ""),
+            "compania_corta": sol.get("compania", ""),
+            "razonsocial": sol.get("razonsocial") or sol.get("compania", ""),
+            "transporte": sol.get("transporte", ""),
+            "tipo": sol.get("tipo", ""),
+            "contrato": sol.get("contrato", ""),
+            "activoA": sol.get("activo_a") or "",
+            "activoS": sol.get("activo_s") or "",
+            "destinohosp": sol.get("destinohosp") or "",
+            "elepep": sol.get("elepep") or "",
+            "progpre": sol.get("progpre") or "",
+            "cge": sol.get("cge") or "",
+            "cta": sol.get("cta") or "",
+            "pos": sol.get("pos") or "",
+            "nombre_solicita": sol.get("nombre_solicita") or "",
+            "ficha_solicita": sol.get("ficha_solicita") or "",
+            "nombre_autoriza": sol.get("nombre_autoriza") or "",
+            "ficha_autoriza": sol.get("ficha_autoriza") or "",
+        }
+
+        personal = obtener_personal_sube(numero)
+        if not personal:
+            return None
+        personal_baja = obtener_personal_baja(numero) if (sol.get("tiene_bajas") or sol.get("n_bajas")) else []
+
+        wb   = openpyxl.load_workbook(RUTA_PLANTILLA)
+        hoja = wb.active
+        _llenar_hoja_plantilla(hoja, info, personal, personal_baja)
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return buf
+    except Exception as e:
+        logger.error(f"Error regenerando plantilla desde BD para {numero}: {e}")
+        return None
 
 
 def listar_solicitudes_xlsx(page: int = 1, limit: int = 20, search: Optional[str] = None) -> tuple[list[dict], int]:

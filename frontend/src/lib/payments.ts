@@ -19,7 +19,9 @@ export const paymentsApi = {
     api.post<CheckoutSession>('/api/checkout/stripe/create', { plan_id: planId }),
 
   success: (sessionId: string) =>
-    api.get<{ ok: boolean }>(`/api/stripe/success?session_id=${sessionId}`),
+    api.get<{ ok: boolean; approved: boolean; payment_status: string | null }>(
+      `/api/stripe/success?session_id=${encodeURIComponent(sessionId)}`,
+    ),
 
   cancel: () => api.get<{ ok: boolean }>('/api/stripe/cancel'),
 }

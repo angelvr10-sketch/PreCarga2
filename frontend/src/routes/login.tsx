@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
 import { useForm } from '@tanstack/react-form'
 import { useAuth } from '@/hooks/use-auth'
@@ -6,12 +6,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { Ship, Loader2, AlertCircle } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { BrandMark } from '@/components/brand'
+import { Loader2, AlertCircle } from 'lucide-react'
 
 export default function Login() {
   const navigate = useNavigate()
-  const { login } = useAuth()
+  const { login, isAuthenticated } = useAuth()
   const [error, setError] = useState<string | null>(null)
 
   const form = useForm({
@@ -22,25 +22,36 @@ export default function Login() {
     onSubmit: async ({ value }) => {
       setError(null)
       try {
+        // No se navega aqui a proposito: login() solo escribe el usuario
+        // en la cache de React Query. El router lee su contexto de auth en
+        // protectedLayout.beforeLoad, y si navegamos en este mismo tick
+        // todavia ve la sesion anterior -> rebota a /login. La
+        // navegacion la hace el efecto de abajo, cuando isAuthenticated
+        // ya es true.
         await login(value.email, value.password)
-        navigate({ to: '/dashboard' })
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error al iniciar sesión')
       }
     },
   })
 
+  // La cookie de sesion ya esta puesta por el backend; esto solo espera a
+  // que el estado de auth se propague antes de entrar al dashboard.
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate({ to: '/dashboard', replace: true })
+    }
+  }, [isAuthenticated, navigate])
+
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
       <Card className="relative w-full max-w-md">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <Ship className="h-6 w-6 text-primary" />
-          </div>
+          <BrandMark alt="" className="mb-2 h-9" />
           <CardTitle>Iniciar Sesión</CardTitle>
           <CardDescription>
-            Accede a tu cuenta de PreCarga SHAT
+            Accede a tu cuenta de Precarga
           </CardDescription>
         </CardHeader>
 
@@ -62,7 +73,7 @@ export default function Login() {
             <form.Field name="email">
               {(field) => (
                 <div className="space-y-2">
-                  <Label htmlFor={field.name}>Correo electrónico</Label>
+                  <Label htmlFor={field.name}>Correo electrónico o usuario</Label>
                   <Input
                     id={field.name}
                     name={field.name}
@@ -70,7 +81,8 @@ export default function Login() {
                     placeholder="correo@ejemplo.com"
                     value={field.state.value}
                     onChange={(e) => field.handleChange(e.target.value)}
-                    autoComplete="email"
+                    autoComplete="username"
+                    autoFocus
                   />
                 </div>
               )}
@@ -97,11 +109,7 @@ export default function Login() {
           <CardFooter className="flex flex-col gap-3">
             <form.Subscribe selector={(state) => state.isSubmitting}>
               {(isSubmitting) => (
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isSubmitting}
-                >
+                <Button type="submit" className="w-full" disabled={isSubmitting}>
                   {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   {isSubmitting ? 'Iniciando sesión...' : 'Iniciar Sesión'}
                 </Button>

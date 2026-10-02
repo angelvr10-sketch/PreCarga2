@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { paymentsApi } from '@/lib/payments'
-import { CreditCard, Download } from 'lucide-react'
+import { CreditCard, Download, AlertCircle } from 'lucide-react'
 
 interface Plan {
   id: string
@@ -14,7 +14,7 @@ interface Plan {
 
 export default function Planes() {
   const navigate = useNavigate()
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['planes'],
     queryFn: () => paymentsApi.listPlans(),
   })
@@ -39,6 +39,21 @@ export default function Planes() {
             </Card>
           ))}
         </div>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold tracking-tight">Planes de Suscripción</h1>
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <p className="text-muted-foreground">Error al cargar los planes</p>
+            <Button onClick={() => refetch()}>Reintentar</Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }

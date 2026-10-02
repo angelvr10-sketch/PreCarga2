@@ -62,6 +62,7 @@ def dashboard_stats(request: Request):
 # ── Solicitudes list ───────────────────────────────────────────
 def _agregar_ultimos_dias(dias: int, barco: str = "") -> tuple:
     """Agrega n_personas/n_bajas por destino (RPX/CPZ) por día en una ventana de `dias` días."""
+    dias = max(1, min(dias, 365))
     hoy = date.today()
     fechas = [(hoy - timedelta(days=i)).isoformat() for i in range(dias - 1, -1, -1)]
     mapa = {
@@ -74,7 +75,11 @@ def _agregar_ultimos_dias(dias: int, barco: str = "") -> tuple:
     barcos: set = set()
 
     try:
-        rows = _get("solicitudes", select="fecha_llegada,transporte,n_personas,n_bajas,destinohosp")
+        # Filtrar por inicio de ventana en Supabase: menos datos transferidos,
+        # evita el cap de 1000 filas por response de PostgREST.
+        rows = _get("solicitudes",
+                    select="fecha_llegada,transporte,n_personas,n_bajas,destinohosp",
+                    filters={"fecha_llegada": f"gte.{fechas[0]}"})
         for r in rows:
             f = (r.get("fecha_llegada") or "")[:10]
             if f not in mapa:
@@ -104,11 +109,11 @@ def _agregar_ultimos_dias(dias: int, barco: str = "") -> tuple:
 
 
 @router.get("/dashboard/programacion-dias")
-def programacion_dias(request: Request):
-    """Personas programadas (altas) por destino RPX/CPZ en los últimos 14 días."""
+def programacion_dias(request: Request, dias: int = 14):
+    """Personas programadas (altas) por destino RPX/CPZ en los últimos `dias` días."""
     _require_auth(request)
 
-    fechas, _, mapa = _agregar_ultimos_dias(14)
+    fechas, _, mapa = _agregar_ultimos_dias(dias)
     return {
         "dias": fechas,
         "rpx": [mapa[d]["rpx"]["altas"] for d in fechas],
@@ -117,11 +122,11 @@ def programacion_dias(request: Request):
 
 
 @router.get("/dashboard/programacion-area")
-def programacion_area(request: Request, barco: str = ""):
-    """Comportamiento de altas vs bajas por destino en los últimos 14 días, con filtro de barco."""
+def programacion_area(request: Request, dias: int = 14, barco: str = ""):
+    """Comportamiento de altas vs bajas por destino en los últimos `dias` días, con filtro de barco."""
     _require_auth(request)
 
-    fechas, barcos, mapa = _agregar_ultimos_dias(14, barco)
+    fechas, barcos, mapa = _agregar_ultimos_dias(dias, barco)
     return {
         "dias": fechas,
         "barcos": barcos,
@@ -249,7 +254,7 @@ async def admin_usuarios_list(request: Request):
             "nombre": u.get("username", ""),
             "email": u.get("email", ""),
             "admin": u.get("rol") == "admin",
-            "verificado": u.get("verificado", False),
+            "verificado": u.get("email_verificado", u.get("verificado", False)),
             "created_at": u.get("creado", ""),
         }
         for u in usuarios
@@ -264,7 +269,9 @@ async def admin_usuarios_update(uid: str, request: Request):
     if "admin" in body:
         update_data["rol"] = "admin" if body["admin"] else "usuario"
     if "verificado" in body:
-        update_data["verificado"] = body["verificado"]
+        # La columna en la BD se llama email_verificado; enviar
+        # "verificado" devolvia 400 de PostgREST.
+        update_data["email_verificado"] = body["verificado"]
     if update_data:
         from core.supabase_db import _patch
         _patch("usuarios", update_data, {"id": f"eq.{uid}"})

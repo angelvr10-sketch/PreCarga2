@@ -1,4 +1,5 @@
 import { useAuth } from '@/hooks/use-auth'
+import { useLogout } from '@/hooks/use-logout'
 import { useSidebar } from '@/hooks/use-sidebar'
 import {
   DropdownMenu,
@@ -14,7 +15,8 @@ import { LogOut, CreditCard, Search, Bell, Settings, Menu } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 
 export function Topbar() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
+  const logout = useLogout()
   const { toggleMenu } = useSidebar()
   const navigate = useNavigate()
 
@@ -97,7 +99,7 @@ export function Topbar() {
               <span>Planes</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout} className="text-destructive focus:text-destructive">
+            <DropdownMenuItem onClick={() => void logout()} className="text-destructive focus:text-destructive">
               <LogOut className="mr-2 h-4 w-4" />
               <span>Cerrar Sesión</span>
             </DropdownMenuItem>

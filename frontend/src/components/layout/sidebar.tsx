@@ -13,13 +13,14 @@ import {
   Users,
   CreditCard,
   LogOut,
-  Ship,
   ChevronsLeft,
   ChevronsRight,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
+import { useLogout } from '@/hooks/use-logout'
 import { useSidebar } from '@/hooks/use-sidebar'
+import { BrandMark } from '@/components/brand'
 
 type RouteTo =
   | '/dashboard'
@@ -43,7 +44,8 @@ const navItems: Array<{ to: RouteTo; label: string; icon: LucideIcon }> = [
 ]
 
 export function Sidebar() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
+  const logout = useLogout()
   const { collapsed, toggle, mobileOpen, closeMobile } = useSidebar()
 
   const isCollapsed = mobileOpen ? false : collapsed
@@ -65,13 +67,11 @@ export function Sidebar() {
       <>
         {/* Brand */}
         <div className={cn('flex items-center py-5', ct ? 'justify-center px-0' : 'gap-2.5 px-5')}>
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary shadow-fluent-1">
-            <Ship className="h-4.5 w-4.5 text-primary-foreground" strokeWidth={2.25} />
-          </div>
+          <BrandMark alt="" className={ct ? 'h-6' : 'h-7'} />
           {!ct && (
             <div className="flex flex-col leading-tight overflow-hidden">
               <span className="fluent-subtitle text-sidebar-foreground whitespace-nowrap">
-                PreCarga SHAT
+                PreCarga
               </span>
               <span className="fluent-caption text-sidebar-foreground/55 whitespace-nowrap">
                 Maritime operations
@@ -152,7 +152,7 @@ export function Sidebar() {
             variant="ghost"
             onClick={() => {
               closeMobile()
-              logout()
+              void logout()
             }}
             title={ct ? 'Cerrar Sesión' : undefined}
             className={cn(

@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { Ship, Loader2, AlertCircle } from 'lucide-react'
+import { BrandMark } from '@/components/brand'
+import { Loader2, AlertCircle } from 'lucide-react'
 
 interface FormValues {
   nombre: string
@@ -71,12 +72,10 @@ export default function Registro() {
       <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
       <Card className="relative w-full max-w-md">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <Ship className="h-6 w-6 text-primary" />
-          </div>
+          <BrandMark alt="" className="mb-2 h-9" />
           <CardTitle>Crear Cuenta</CardTitle>
           <CardDescription>
-            Regístrate para usar PreCarga SHAT
+            Regístrate para usar PreCarga
           </CardDescription>
         </CardHeader>
 

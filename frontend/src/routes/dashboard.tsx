@@ -20,8 +20,17 @@ import { Button } from '@/components/ui/button'
 import { solicitudesApi } from '@/lib/solicitudes'
 import type { DashboardStats } from '@/types'
 import { cn } from '@/lib/utils'
-import { FileText, Users, UserPlus, UserMinus, ArrowRight, Download, Building2 } from 'lucide-react'
+import { FileText, Users, UserPlus, UserMinus, ArrowRight, Download, Building2, AlertCircle } from 'lucide-react'
 import type { ProgramacionArea } from '@/types'
+
+type Periodo = 14 | 30 | 180 | 365
+
+const PERIODOS: { value: Periodo; label: string; plural: string }[] = [
+  { value: 14, label: '14 días', plural: 'últimos 14 días' },
+  { value: 30, label: '1 mes', plural: 'últimos 30 días' },
+  { value: 180, label: '6 meses', plural: 'últimos 6 meses' },
+  { value: 365, label: '1 año', plural: 'últimos 365 días' },
+]
 
 const statCards: { key: keyof DashboardStats; title: string; icon: typeof FileText; color: string }[] = [
   { key: 'total_solicitudes', title: 'Total Solicitudes', icon: FileText, color: 'text-blue-400' },
@@ -32,6 +41,10 @@ const statCards: { key: keyof DashboardStats; title: string; icon: typeof FileTe
 ]
 
 export default function Dashboard() {
+  const [periodo, setPeriodo] = useState<Periodo>(14)
+
+  const periodoLabel = PERIODOS.find((p) => p.value === periodo)?.plural ?? 'últimos 14 días'
+
   const statsQuery = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: () => solicitudesApi.dashboard(),
@@ -43,8 +56,14 @@ export default function Dashboard() {
   })
 
   const programacionQuery = useQuery({
-    queryKey: ['programacion-dias'],
-    queryFn: () => solicitudesApi.programacionDias(),
+    queryKey: ['programacion-dias', periodo],
+    queryFn: () => solicitudesApi.programacionDias(periodo),
+    staleTime: 60_000,
+  })
+
+  const areaQuery = useQuery({
+    queryKey: ['programacion-area', periodo],
+    queryFn: () => solicitudesApi.programacionArea(periodo),
     staleTime: 60_000,
   })
 
@@ -69,12 +88,6 @@ export default function Dashboard() {
   const fsBarsRpx = useFullscreen<HTMLDivElement>()
   const fsBarsCpz = useFullscreen<HTMLDivElement>()
   const fsArea = useFullscreen<HTMLDivElement>()
-
-  const areaQuery = useQuery({
-    queryKey: ['programacion-area'],
-    queryFn: () => solicitudesApi.programacionArea(),
-    staleTime: 60_000,
-  })
 
   const areaData = useMemo(() => {
     const d = areaQuery.data
@@ -106,6 +119,7 @@ export default function Dashboard() {
   const areaChart = (
     data: { label: string; altas: number; bajas: number }[],
     loading: boolean,
+    error: boolean,
     altasGrad: string,
     bajasGrad: string,
     fullscreen: boolean,
@@ -113,6 +127,11 @@ export default function Dashboard() {
     <div className={cn('h-56 w-full', fullscreen && 'flex-1 min-h-0')}>
       {loading ? (
         <div className="flex h-full items-center justify-center text-muted-foreground">Cargando...</div>
+      ) : error ? (
+        <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+          <AlertCircle className="h-6 w-6 text-destructive" />
+          <span className="text-xs">Error al cargar datos</span>
+        </div>
       ) : (
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data}>
@@ -167,7 +186,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {statCards.map((card) => {
@@ -184,6 +205,11 @@ export default function Dashboard() {
               <CardContent>
                 {statsQuery.isLoading ? (
                   <div className="h-8 w-20 animate-pulse rounded bg-muted" />
+                ) : statsQuery.isError ? (
+                  <div className="flex items-center gap-1 text-destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <span className="text-xs">Error</span>
+                  </div>
                 ) : (
                   <p className="text-3xl font-bold">{value ?? 0}</p>
                 )}
@@ -191,6 +217,23 @@ export default function Dashboard() {
             </Card>
           )
         })}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1 rounded-lg border border-white/10 bg-black/30 p-1 w-fit">
+        {PERIODOS.map((p) => (
+          <button
+            key={p.value}
+            onClick={() => setPeriodo(p.value)}
+            className={cn(
+              'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+              periodo === p.value
+                ? 'bg-primary text-primary-foreground shadow'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {p.label}
+          </button>
+        ))}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -203,7 +246,7 @@ export default function Dashboard() {
         >
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Programación RPX · últimos 14 días
+              Programación RPX · {periodoLabel}
             </CardTitle>
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-violet-400">{totalRpx.toLocaleString()}</span>
@@ -214,6 +257,11 @@ export default function Dashboard() {
             <div className={cn('h-56 w-full', fsBarsRpx.isFullscreen && 'flex-1 min-h-0')}>
               {programacionQuery.isLoading ? (
                 <div className="flex h-full items-center justify-center text-muted-foreground">Cargando...</div>
+              ) : programacionQuery.isError ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+                  <AlertCircle className="h-6 w-6 text-destructive" />
+                  <span className="text-xs">Error al cargar datos</span>
+                </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={barData}>
@@ -254,7 +302,7 @@ export default function Dashboard() {
         >
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Programación CPZ · últimos 14 días
+              Programación CPZ · {periodoLabel}
             </CardTitle>
             <div className="flex items-center gap-2">
               <span className="text-sm font-bold text-sky-300">{totalCpz.toLocaleString()}</span>
@@ -265,6 +313,11 @@ export default function Dashboard() {
             <div className={cn('h-56 w-full', fsBarsCpz.isFullscreen && 'flex-1 min-h-0')}>
               {programacionQuery.isLoading ? (
                 <div className="flex h-full items-center justify-center text-muted-foreground">Cargando...</div>
+              ) : programacionQuery.isError ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 text-muted-foreground">
+                  <AlertCircle className="h-6 w-6 text-destructive" />
+                  <span className="text-xs">Error al cargar datos</span>
+                </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={barData}>
@@ -306,7 +359,7 @@ export default function Dashboard() {
       >
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">
-            Altas vs Bajas · últimos 14 días
+            Altas vs Bajas · {periodoLabel}
           </CardTitle>
           <div className="flex items-center gap-2">
             <select
@@ -330,7 +383,7 @@ export default function Dashboard() {
               <span className="h-2.5 w-2.5 rounded-sm bg-rose-400" /> Bajas
             </span>
           </div>
-          {areaChart(areaData, areaQuery.isLoading, 'gradAltas', 'gradBajas', fsArea.isFullscreen)}
+          {areaChart(areaData, areaQuery.isLoading, areaQuery.isError, 'gradAltas', 'gradBajas', fsArea.isFullscreen)}
         </CardContent>
       </Card>
 
@@ -364,6 +417,15 @@ export default function Dashboard() {
                     <div className="flex items-center justify-center gap-2">
                       <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                       Cargando...
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : solicitudesQuery.isError ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                    <div className="flex flex-col items-center gap-2">
+                      <AlertCircle className="h-6 w-6 text-destructive" />
+                      <span className="text-xs">Error al cargar solicitudes</span>
                     </div>
                   </TableCell>
                 </TableRow>

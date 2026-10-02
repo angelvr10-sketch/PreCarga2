@@ -8,13 +8,14 @@ import {
 } from '@tanstack/react-table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { adminApi } from '@/lib/admin'
 import type { Usuario } from '@/types'
-import { Users, Shield } from 'lucide-react'
+import { Users, Shield, AlertCircle } from 'lucide-react'
 
 export default function AdminUsuarios() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['admin', 'usuarios'],
     queryFn: () => adminApi.listUsers(),
   })
@@ -72,6 +73,24 @@ export default function AdminUsuarios() {
     columns,
     getCoreRowModel: getCoreRowModel(),
   })
+
+  if (isError) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-2">
+          <Shield className="h-6 w-6 text-primary" />
+          <h1 className="text-2xl font-bold tracking-tight">Administración de Usuarios</h1>
+        </div>
+        <Card>
+          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
+            <AlertCircle className="h-8 w-8 text-destructive" />
+            <p className="text-muted-foreground">Error al cargar los usuarios</p>
+            <Button onClick={() => refetch()}>Reintentar</Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

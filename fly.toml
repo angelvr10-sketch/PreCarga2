@@ -1,4 +1,4 @@
-app = "precarga-shat"
+app = "precarga"
 primary_region = "mia"
 
 [build]
