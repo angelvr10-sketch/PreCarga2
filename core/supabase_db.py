@@ -65,6 +65,41 @@ TIMEOUT_CONFIG = 30.0
 MAX_RETRIES = 3
 RETRY_BASE_SEGONDS = 1
 
+# Cliente HTTP persistente (keep-alive). Importado de precarga.
+#
+# Antes cada llamada usaba `httpx.request(...)`, que crea un Client nuevo por
+# peticion: abre TCP, hace el handshake TLS y cierra al terminar. Al procesar
+# un PDF eso se paga por CADA persona insertada (ver core.db.guardar_solicitud,
+# que hace un _post por fila), asi que un PDF de 60 personas abria 60
+# conexiones TLS distintas contra Supabase.
+#
+# Reutilizar un unico Client mantiene vivos el socket y la sesion TLS, de modo
+# que las peticiones siguientes solo pagan el round-trip. httpx.Client es
+# thread-safe, lo que importa porque _count_distinct lanza peticiones en
+# paralelo con ThreadPoolExecutor.
+#
+# max_keepalive_connections debe ser >= al numero de peticiones simultaneas
+# para que ninguna conexion se descarte entre usos.
+_CLIENT = (
+    httpx.Client(
+        timeout=TIMEOUT_CONFIG,
+        limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+    )
+    if HAS_HTTPX
+    else None
+)
+
+
+def cerrar_cliente():
+    """Cierra el pool de conexiones. Llamar al apagar la app (ver main.py).
+
+    Sin esto, cada recarga de `uvicorn --reload` deja sockets abiertos.
+    """
+    global _CLIENT
+    if _CLIENT is not None:
+        _CLIENT.close()
+        _CLIENT = None
+
 def _now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -89,14 +124,16 @@ def _request_with_retry(method, url, **kwargs):
     Reintenta errores de transporte y tambien 5xx / 429 de PostgREST. Los 4xx
     no se reintentan: son deterministas y solo gastarian tiempo.
     """
-    if not httpx:
+    if not _CLIENT:
         raise RuntimeError("httpx no esta instalado. Ejecuta: pip install httpx")
 
     last_exception = None
     for attempt in range(MAX_RETRIES):
         try:
-            # Usamos un timeout explícito
-            response = httpx.request(method, url, timeout=TIMEOUT_CONFIG, **kwargs)
+            # Reutilizamos el cliente persistente: el socket y la sesion TLS
+            # se mantienen vivos entre llamadas; el timeout vive en el Client,
+            # asi que no hace falta pasarlo en cada peticion.
+            response = _CLIENT.request(method, url, **kwargs)
 
             if response.status_code >= 500 or response.status_code == 429:
                 last_exception = _status_error(response)
@@ -140,6 +177,40 @@ def _get(table: str, select: str = "*", filters: Optional[dict] = None,
         print(f"\n[DB ERROR GET] Table: {table} | URL: {url} | Params: {params}")
         print(f"Error: {e}")
         raise e
+
+def _get_all(table: str, select: str = "*", filters: Optional[dict] = None,
+              order: Optional[str] = None, page_size: int = 1000) -> list:
+    """Descarga TODAS las filas paginando, sin sufrir el cap de max-rows.
+
+    `_get` sin `limit` esta sujeto al cap de PostgREST (max-rows = 1000 en este
+    proyecto). Si la consulta casa mas filas, la respuesta se TRUNCA en
+    silencio: el llamador cree que son todas y no hay ningun error. Por eso
+    generar listas de personal con `_get` perderia solicitudes en silencio al
+    pasar de 1000 registros; aqui se recorre el total en paginas.
+    """
+    from core.supabase_db import _count_rows
+
+    total = _count_rows(table, filters)
+    if total <= 0:
+        return []
+
+    params = {"select": select}
+    if filters:
+        params.update(filters)
+    if order:
+        params["order"] = order
+    url = f"{BASE}/{table}"
+
+    filas: list = []
+    for inicio in range(0, total, page_size):
+        headers = {**HEADERS, "Range": f"{inicio}-{inicio + page_size - 1}"}
+        r = _request_with_retry("GET", url, headers=headers, params=params)
+        lote = r.json() if r.status_code != 204 else []
+        filas.extend(lote)
+        if not lote:
+            break
+    return filas
+
 
 def _count_rows(table: str, filters: Optional[dict] = None) -> int:
     """Cuenta filas de una tabla Supabase en una sola petición (Prefer: count=exact)."""
@@ -216,6 +287,35 @@ def _post(table: str, data: dict) -> Optional[dict]:
     except Exception as e:
         print(f"\n[DB ERROR POST] Table: {table} | URL: {url} | Data: {data}")
         print(f"Error: {e}")
+        raise e
+
+def _post_batch(table: str, data_list: list) -> list:
+    """POST de varias filas en UNA sola peticion. Devuelve las filas insertadas.
+
+    PostgREST acepta un array de objetos y los inserta en un unico viaje.
+    Antes, guardar_solicitud hacia un _post POR PERSONA: procesar un PDF de
+    60 personas eran 60 round-trips a Supabase, que es latencia pura.
+
+    Requisitos que impone el insert batch:
+      - todas las filas deben tener las MISMAS claves, si no PostgREST 400;
+      - el lote se manda troceado desde core.db para no generar un payload
+        gigante (ver POST_BATCH_SIZE).
+    """
+    if not data_list:
+        return []
+    keys = set(data_list[0].keys())
+    for fila in data_list[1:]:
+        if set(fila.keys()) != keys:
+            raise ValueError(
+                f"Batch inhomogeneo en {table}: se espera {sorted(keys)} "
+                f"y se encontro {sorted(fila.keys())}"
+            )
+    url = f"{BASE}/{table}"
+    try:
+        r = _request_with_retry("POST", url, headers=HEADERS, json=data_list)
+        return r.json() if r.status_code in (200, 201) else []
+    except Exception as e:
+        print(f"\n[DB ERROR POST BATCH] Table: {table} | filas={len(data_list)} | Error: {e}")
         raise e
 
 def _delete(table: str, filters: dict) -> list:

@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { adminApi } from '@/lib/admin'
+import { formatFecha } from '@/lib/utils'
 import type { Usuario } from '@/types'
 import { Users, Shield, AlertCircle } from 'lucide-react'
 
@@ -61,7 +62,7 @@ export default function AdminUsuarios() {
         header: 'Fecha de Registro',
         cell: ({ row }) => {
           const date = row.getValue('created_at') as string
-          return new Date(date).toLocaleDateString()
+          return formatFecha(date)
         },
       },
     ],

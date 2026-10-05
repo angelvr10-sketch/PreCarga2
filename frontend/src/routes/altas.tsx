@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
+import { useSearch } from '@tanstack/react-router'
 import {
   type ColumnDef,
   flexRender,
@@ -22,13 +23,19 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { solicitudesApi } from '@/lib/solicitudes'
+import { formatFecha } from '@/lib/utils'
 import type { Solicitud } from '@/types'
 import { Search, Download, FileText, Loader2, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from 'lucide-react'
 
+function getSearchInicial(): string {
+  if (typeof window === 'undefined') return ''
+  return new URLSearchParams(window.location.search).get('search') ?? ''
+}
+
 export default function Altas() {
   const queryClient = useQueryClient()
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const [search, setSearch] = useState(getSearchInicial)
+  const [debouncedSearch, setDebouncedSearch] = useState(getSearchInicial)
   const [page, setPage] = useState(1)
   const [sorting, setSorting] = useState<SortingState>([{ id: 'created_at', desc: true }])
   const [rowSelection, setRowSelection] = useState({})
@@ -41,6 +48,17 @@ export default function Altas() {
     }, 350)
     return () => clearTimeout(t)
   }, [search])
+
+  // El buscador global (Ctrl+K) navega a /altas?search=...: si el componente ya
+  // estaba montado hay que sincronizar el texto tambien aqui.
+  const params = useSearch({ strict: false }) as Record<string, string | undefined>
+  useEffect(() => {
+    if (params.search !== undefined) {
+      setSearch(params.search)
+      setDebouncedSearch(params.search)
+      setPage(1)
+    }
+  }, [params.search])
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['solicitudes', debouncedSearch, page],
@@ -107,7 +125,7 @@ export default function Altas() {
         header: ({ header }) => <SortableHeader header={header}>Fecha de Llegada</SortableHeader>,
         cell: ({ row }) => {
           const fecha = row.getValue('created_at') as string
-          return fecha ? new Date(fecha).toLocaleDateString() : <span className="text-muted-foreground">—</span>
+          return fecha ? formatFecha(fecha) : <span className="text-muted-foreground">—</span>
         },
       },
       {

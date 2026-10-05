@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useSearch } from '@tanstack/react-router'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   type ColumnDef,
@@ -38,6 +39,13 @@ export default function Activos() {
   })
 
   const activos = (data as ActivoRecord[]) ?? []
+
+  // El buscador global (Ctrl+K) llega con ?search=... para filtrar al instante.
+  const params = useSearch({ strict: false }) as Record<string, string | undefined>
+  const filtro = (params.search ?? '').toLowerCase().trim()
+  const activosFiltrados = filtro
+    ? activos.filter((a) => a.nombre.toLowerCase().includes(filtro))
+    : activos
 
   const createMutation = useMutation({
     mutationFn: () => activosApi.create(nombre),
@@ -84,7 +92,7 @@ export default function Activos() {
   )
 
   const table = useReactTable({
-    data: activos,
+    data: activosFiltrados,
     columns,
     getCoreRowModel: getCoreRowModel(),
   })

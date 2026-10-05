@@ -2,7 +2,11 @@
 import os
 import re
 from datetime import datetime
-from core.supabase_db import _get, _post, _delete, _patch, HAS_HTTPX
+from core.supabase_db import _get, _post, _post_batch, _delete, _patch, HAS_HTTPX
+from core.config import logger
+
+# Filas por viaje en el insert batch de `personal`. Ver _post_batch.
+POST_BATCH_SIZE = 200
 
 
 def normalizar_fecha_iso(valor) -> str:
@@ -96,26 +100,15 @@ def guardar_solicitud(info: dict, personal_sube: list, personal_baja: list,
 
     sol_id = nueva_sol["id"]
 
-    # Personal que sube
-    for p in personal_sube:
-        _post("personal", {
-            "solicitud_id": sol_id,
-            "tipo": "sube",
-            "rfc": p.get("rfc", ""),
-            "nombre": p.get("nombre", ""),
-            "libreta": p.get("libreta", ""),
-            "vigencia": p.get("vigencia", ""),
-            "llegada": p.get("llegada", ""),
-            "salida": p.get("salida", ""),
-            "dias": p.get("dias", ""),
-            "transporte": info.get("transporte", ""),
-        })
+    # Altas y bajas van en el MISMO lote: comparten forma de fila, asi que no
+    # hay motivo para separarlas. Antes eran dos bucles con un _post por
+    # persona, es decir un round-trip a Supabase por cada fila.
+    transporte = info.get("transporte", "")
 
-    # Personal que baja
-    for p in personal_baja:
-        _post("personal", {
+    def _fila(p: dict, tipo: str) -> dict:
+        return {
             "solicitud_id": sol_id,
-            "tipo": "baja",
+            "tipo": tipo,
             "rfc": p.get("rfc", ""),
             "nombre": p.get("nombre", ""),
             "libreta": p.get("libreta", ""),
@@ -123,8 +116,19 @@ def guardar_solicitud(info: dict, personal_sube: list, personal_baja: list,
             "llegada": p.get("llegada", ""),
             "salida": p.get("salida", ""),
             "dias": p.get("dias", ""),
-            "transporte": info.get("transporte", ""),
-        })
+            "transporte": transporte,
+        }
+
+    filas = [_fila(p, "sube") for p in personal_sube]
+    filas += [_fila(p, "baja") for p in personal_baja]
+
+    # Troceado: un unico POST con miles de filas puede pasarse del limite de
+    # payload o del timeout de PostgREST. 200 filas por viaje mantiene cada
+    # peticion pequena y aun asi reduce los viajes de N a N/200.
+    for i in range(0, len(filas), POST_BATCH_SIZE):
+        lote = filas[i:i + POST_BATCH_SIZE]
+        _post_batch("personal", lote)
+        logger.debug(f"personal lote {i // POST_BATCH_SIZE + 1}: {len(lote)} filas")
 
     return sol_id
 

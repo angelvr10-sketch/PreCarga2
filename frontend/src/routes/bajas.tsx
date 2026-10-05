@@ -13,11 +13,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { solicitudesApi } from '@/lib/solicitudes'
 import { bajasApi } from '@/lib/bajas'
 import type { Solicitud } from '@/types'
-import { Upload, Database, Search, Download, Loader2, CheckCircle2, XCircle } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { Upload, Database, Search, Download, Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react'
+import { cn, formatFecha } from '@/lib/utils'
 
 export default function Bajas() {
   const [step, setStep] = useState<'upload' | 'search'>('upload')
+  // Motivo por el que se vuelve al paso de carga. El error de busqueda se
+  // renderiza en el paso 'search', asi que al cambiar de paso haria falta
+  // carryarlo aqui o el fallo seria silencioso.
+  const [aviso, setAviso] = useState('')
   const [bdToken, setBdToken] = useState<string | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
@@ -34,6 +38,7 @@ export default function Bajas() {
   const uploadMutation = useMutation({
     mutationFn: (f: File) => bajasApi.cargarBd(f),
     onSuccess: (data) => {
+      setAviso('')
       setBdToken(data.token)
       setStep('search')
     },
@@ -42,6 +47,29 @@ export default function Bajas() {
   const buscarMutation = useMutation({
     mutationFn: ({ solicitudes, token }: { solicitudes: string[]; token: string }) =>
       bajasApi.buscarBajas(solicitudes, token),
+    // El backend borra el CSV de Storage nada mas leerlo, asi que un intento
+    // fallido lo consume igual. Sin esto el token se quedaba "valido" en
+    // pantalla y se podia reintentar contra un CSV que ya no existia.
+    onError: (e) => {
+      setAviso(
+        `No se pudo buscar: ${e instanceof Error ? e.message : 'error desconocido'}. ` +
+          'El archivo CSV se descarta en cada intento, vuelve a subirlo.',
+      )
+      setBdToken('')
+      setStep('upload')
+    },
+    onSuccess: (data) => {
+      if (data.ok) {
+        setAviso('')
+        return
+      }
+      // ok:false llega con HTTP 200 y el motivo en `mensaje`.
+      setAviso(
+        `${data.mensaje}. El archivo CSV se descarta en cada intento, vuelve a subirlo.`,
+      )
+      setBdToken('')
+      setStep('upload')
+    },
   })
 
   const solicitudes = solicitudesData?.solicitudes ?? []
@@ -91,7 +119,7 @@ export default function Bajas() {
       {
         accessorKey: 'created_at',
         header: 'Fecha',
-        cell: ({ row }) => new Date(row.getValue('created_at')).toLocaleDateString(),
+        cell: ({ row }) => formatFecha(row.getValue('created_at') as string),
       },
     ],
     [],
@@ -190,6 +218,13 @@ export default function Bajas() {
               className="hidden"
               onChange={handleFileSelect}
             />
+
+            {aviso && (
+              <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+                <p className="text-sm text-amber-100">{aviso}</p>
+              </div>
+            )}
 
             {uploadMutation.isError && (
               <div className="flex items-center gap-3 rounded-lg border border-destructive/50 p-4">

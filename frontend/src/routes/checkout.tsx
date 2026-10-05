@@ -41,9 +41,13 @@ export default function Checkout() {
           <CardContent className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
             <AlertCircle className="h-8 w-8" />
             <p className="text-lg font-medium">No se especificó un plan</p>
-            <Button variant="outline" className="mt-4 gap-2" onClick={() => navigate({ to: '/planes' })}>
+            {/* Los enlaces a /planes se retiraron temporalmente. Ahora el destino es el
+            dashboard: /checkout?no_downloads=1 es a donde redirige el backend
+            al agotar las descargas, asi que dejarlo sin boton seria un callejon
+            sin salida. */}
+            <Button variant="outline" className="mt-4 gap-2" onClick={() => navigate({ to: '/dashboard' })}>
               <ArrowLeft className="h-4 w-4" />
-              Ver Planes
+              Volver al Dashboard
             </Button>
           </CardContent>
         </Card>
@@ -60,9 +64,13 @@ export default function Checkout() {
             <AlertCircle className="h-8 w-8 text-yellow-400" />
             <p className="text-lg font-medium">Has alcanzado el límite de descargas gratuitas</p>
             <p className="text-sm">Adquiere un plan para seguir descargando</p>
-            <Button variant="outline" className="mt-4 gap-2" onClick={() => navigate({ to: '/planes' })}>
+            {/* Los enlaces a /planes se retiraron temporalmente. Ahora el destino es el
+            dashboard: /checkout?no_downloads=1 es a donde redirige el backend
+            al agotar las descargas, asi que dejarlo sin boton seria un callejon
+            sin salida. */}
+            <Button variant="outline" className="mt-4 gap-2" onClick={() => navigate({ to: '/dashboard' })}>
               <ArrowLeft className="h-4 w-4" />
-              Ver Planes
+              Volver al Dashboard
             </Button>
           </CardContent>
         </Card>
@@ -90,9 +98,13 @@ export default function Checkout() {
           <CardContent className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
             <AlertCircle className="h-8 w-8" />
             <p className="text-lg font-medium">Plan no encontrado</p>
-            <Button variant="outline" className="mt-4 gap-2" onClick={() => navigate({ to: '/planes' })}>
+            {/* Los enlaces a /planes se retiraron temporalmente. Ahora el destino es el
+            dashboard: /checkout?no_downloads=1 es a donde redirige el backend
+            al agotar las descargas, asi que dejarlo sin boton seria un callejon
+            sin salida. */}
+            <Button variant="outline" className="mt-4 gap-2" onClick={() => navigate({ to: '/dashboard' })}>
               <ArrowLeft className="h-4 w-4" />
-              Ver Planes
+              Volver al Dashboard
             </Button>
           </CardContent>
         </Card>

@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { XCircle, CreditCard, LayoutDashboard } from 'lucide-react'
+import { XCircle, LayoutDashboard } from 'lucide-react'
 
 export default function StripeCancel() {
   const navigate = useNavigate()
@@ -26,10 +26,9 @@ export default function StripeCancel() {
             </p>
 
             <div className="flex flex-col gap-3">
-              <Button className="w-full gap-2" size="lg" onClick={() => navigate({ to: '/planes' })}>
-                <CreditCard className="h-4 w-4" />
-                Intentar de nuevo
-              </Button>
+              {/* "Intentar de nuevo" (que iba a /planes) retirado temporalmente:
+                  queda el boton al dashboard, que es la salida natural de un
+                  pago cancelado. */}
               <Button variant="outline" className="w-full gap-2" onClick={() => navigate({ to: '/dashboard' })}>
                 <LayoutDashboard className="h-4 w-4" />
                 Ir al Dashboard

@@ -93,11 +93,8 @@ export default function StripeSuccess() {
               </div>
             ) : (
               <div className="flex flex-col gap-3">
-                {estado !== 'aprobado' && (
-                  <Button className="w-full gap-2" size="lg" onClick={() => navigate({ to: '/planes' })}>
-                    Intentar de nuevo
-                  </Button>
-                )}
+                {/* "Intentar de nuevo" (que iba a /planes) retirado
+                    temporalmente; queda la salida al dashboard. */}
                 <Button
                   variant={estado === 'aprobado' ? 'default' : 'outline'}
                   className="w-full gap-2"

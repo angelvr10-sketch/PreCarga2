@@ -2,6 +2,7 @@ import { Outlet } from '@tanstack/react-router'
 import { Sidebar } from './sidebar'
 import { Topbar } from './topbar'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { ChangelogModal } from './changelog-modal'
 
 export function AppLayout() {
   return (
@@ -16,6 +17,9 @@ export function AppLayout() {
             </div>
           </main>
         </div>
+        {/* modal de novedades: se controla solo, se abre en /dashboard y desde
+            el item "Novedades" del sidebar */}
+        <ChangelogModal />
       </div>
     </ErrorBoundary>
   )

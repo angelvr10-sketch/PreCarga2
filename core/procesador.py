@@ -1,6 +1,7 @@
 """core/procesador.py — Lógica de extracción de PDFs y generación de Excel"""
 import re
 import csv
+import copy
 import shutil
 import openpyxl
 import pdfplumber
@@ -12,7 +13,9 @@ from .config import (
     RUTA_PLANTILLA_ENTRADA, RUTA_ACTIVOS, MAPEO_ACTIVOS
 )
 from .catalogo import obtener_nombre_compania, leer_activos
-from .db import guardar_solicitud, obtener_solicitud, obtener_personal_sube, obtener_personal_baja
+from .db import (guardar_solicitud, obtener_solicitud, obtener_personal_sube,
+                 obtener_personal_baja, normalizar_fecha_iso)
+from .supabase_db import _get
 from datetime import datetime
 
 
@@ -237,11 +240,45 @@ def _buscar_activos(texto: str, lista: List[str]) -> Tuple[Optional[str], Option
 #  Generador de plantilla principal (solicitud → xlsx)
 # ──────────────────────────────────────────────────────────────
 
+# A5 dice "Fecha de Solicitud:" y A6 trae =TODAY() en la plantilla, asi que sin
+# intervention el documento muestra la fecha en que se abre/imprime, no la de
+# arribo del personal.
+_CELDA_FECHA_SOLICITUD = "A6"
+
+
+def _poner_fecha_solicitud(hoja, fecha_llegada: str) -> None:
+    """Escribe en A6 ('Fecha de Solicitud') la fecha de LLEGADA del personal.
+
+    Se usa la misma fuente que core.db.guardar_solicitud para la columna
+    fecha_llegada (la llegada de la primera persona), de modo que la plantilla
+    y la BD no pueden discrepar. Si no hay fecha, se deja la celda como venia
+    en vez de escribir un valor inventado.
+    """
+    if not fecha_llegada:
+        return
+    # Se normaliza aqui tambien (y no solo en el llamador) para que ninguna
+    # fecha dd/mm/yyyy acabe escrita como texto en una celda con formato fecha.
+    fecha_llegada = normalizar_fecha_iso(fecha_llegada)
+    try:
+        hoja[_CELDA_FECHA_SOLICITUD] = datetime.strptime(fecha_llegada, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        # Fecha ilegible: se escribe tal cual para no perderla ni inventar otra.
+        hoja[_CELDA_FECHA_SOLICITUD] = fecha_llegada
+
+
 def _llenar_hoja_plantilla(hoja, info: Dict, personal: List[Dict],
                            personal_baja: List[Dict]) -> List[str]:
     """Llena la hoja activa de la plantilla de solicitud. Devuelve advertencias."""
     quitar_celdas_combinadas(hoja)
     limpiar_celdas(hoja, "A15")
+
+    # Fecha de llegada: la que trae la BD si esta disponible (regenerado desde
+    # /api/descargar) y, si no, la del primer personal (PDF nuevo).
+    _llegada_1a = personal[0].get("llegada", "") if personal else ""
+    _poner_fecha_solicitud(
+        hoja,
+        normalizar_fecha_iso(info.get("fecha_llegada") or _llegada_1a),
+    )
 
     fila_inicial = 15
     for i, p in enumerate(personal, start=fila_inicial):
@@ -285,19 +322,24 @@ def _llenar_hoja_plantilla(hoja, info: Dict, personal: List[Dict],
     return errores
 
 
-def llenar_plantilla(ruta_pdf: Path) -> Tuple[bool, str]:
-    """Procesa un PDF y genera el Excel de solicitud."""
+def llenar_plantilla(ruta_pdf: Path) -> Tuple[bool, str, str]:
+    """Procesa un PDF y genera el Excel de solicitud.
+
+    Devuelve (exito, mensaje, folio). El folio es el numero de solicitud
+    ("" si fallo) y es lo que el frontend necesita para descargar el xlsx
+    recien generado via /api/descargar/{folio}.xlsx, que lo regenera desde la BD.
+    """
     try:
         if not RUTA_PLANTILLA.exists():
-            return False, f"Plantilla no encontrada: {RUTA_PLANTILLA}"
+            return False, f"Plantilla no encontrada: {RUTA_PLANTILLA}", ""
         if not ruta_pdf.exists():
-            return False, f"PDF no encontrado: {ruta_pdf}"
+            return False, f"PDF no encontrado: {ruta_pdf}", ""
 
         personal = extraer_personal_sube(ruta_pdf)
         info     = extraer_datos_solicitud(ruta_pdf)
 
         if not personal:
-            return False, "No se encontró personal en el PDF"
+            return False, "No se encontró personal en el PDF", ""
 
         personal_baja = extraer_personal_baja(ruta_pdf)
 
@@ -307,6 +349,7 @@ def llenar_plantilla(ruta_pdf: Path) -> Tuple[bool, str]:
         errores = _llenar_hoja_plantilla(hoja, info, personal, personal_baja)
 
         nombre_salida = f"{info.get('solicitud', 'SIN_NUM')}.xlsx"
+        folio = nombre_salida[:-5]  # sin la extension
         ruta_salida   = SOL_DIR / nombre_salida
         wb.save(ruta_salida)
 
@@ -323,12 +366,12 @@ def llenar_plantilla(ruta_pdf: Path) -> Tuple[bool, str]:
             mensaje += f" | Advertencias: {', '.join(errores)}"
 
         logger.info(mensaje)
-        return True, mensaje
+        return True, mensaje, folio
 
     except Exception as e:
         msg = f"Error procesando {ruta_pdf.name}: {e}"
         logger.error(msg)
-        return False, msg
+        return False, msg, ""
 
 
 def generar_plantilla_desde_bd(numero: str) -> Optional[io.BytesIO]:
@@ -362,6 +405,9 @@ def generar_plantilla_desde_bd(numero: str) -> Optional[io.BytesIO]:
             "ficha_solicita": sol.get("ficha_solicita") or "",
             "nombre_autoriza": sol.get("nombre_autoriza") or "",
             "ficha_autoriza": sol.get("ficha_autoriza") or "",
+            # Alimenta A6 ("Fecha de Solicitud"), que en la plantilla venia
+            # como =TODAY(). Ver _poner_fecha_solicitud.
+            "fecha_llegada": sol.get("fecha_llegada") or "",
         }
 
         personal = obtener_personal_sube(numero)
@@ -471,37 +517,147 @@ def leer_meta_xlsx(ruta: Path) -> dict:
 #  Plantilla de salidas (bajas)
 # ──────────────────────────────────────────────────────────────
 
-_FILA_INICIO_SAL  = 22
-_POR_BLOQUE_SAL   = 15
-_PASO_SAL         = 17
+_BLOQUE_TAMANO     = 15
+_FILA_DATOS_INICIO = 23
+_CELDA_FECHA       = "C18"
 
-def _fila_salida(idx: int) -> int:
-    b = idx // _POR_BLOQUE_SAL
-    p = idx %  _POR_BLOQUE_SAL
-    return _FILA_INICIO_SAL + (0 if b == 0 else 17 + (b-1)*_PASO_SAL) + p
+# Texto que va en A12 (destino) según el destino de la solicitud
+_DESTINO_A12 = {
+    "RPX": "REFORMA PEMEX",
+    "CPZ": 'U.H.F "CERRO DE LA PEZ"',
+}
+
+
+def _dividir_bloques(registros: list) -> list:
+    """Divide registros en bloques de a 15 (una hoja por bloque)."""
+    return [registros[i:i + _BLOQUE_TAMANO]
+            for i in range(0, len(registros), _BLOQUE_TAMANO)]
+
+
+def _copiar_imagenes(ws_origen, ws_destino):
+    """Copia todas las imágenes de una hoja a otra preservando su posición."""
+    for img in ws_origen._images:
+        nueva_img = copy.deepcopy(img)
+        ws_destino.add_image(nueva_img)
+
+
+def _hojas_por_bloque(wb, hoja_base, total: int) -> list:
+    """Crea tantas hojas como bloques de 15 hagan falta, copiando la plantilla."""
+    prefix = hoja_base.title.strip()
+    hojas = []
+    for b in range((total + _BLOQUE_TAMANO - 1) // _BLOQUE_TAMANO):
+        inicio = b * _BLOQUE_TAMANO + 1
+        fin    = min((b + 1) * _BLOQUE_TAMANO, total)
+        nombre = f"{prefix}({inicio}-{fin})"
+        if b == 0:
+            hoja_base.title = nombre
+            hojas.append(hoja_base)
+        else:
+            nueva = wb.copy_worksheet(hoja_base)
+            nueva.title = nombre
+            _copiar_imagenes(hoja_base, nueva)
+            hojas.append(nueva)
+    return hojas
+
+
+def _informacion_solicitud(numero, cache: dict) -> dict:
+    """Devuelve la solicitud (con cache) o un dict vacío."""
+    sn = str(numero or "").strip()
+    if not sn:
+        return {}
+    if sn not in cache:
+        cache[sn] = obtener_solicitud(sn) or {}
+    return cache[sn]
+
+
+def _precargar_solicitudes(cache: dict, numeros) -> None:
+    """Carga en una sola llamada (in.) las solicitudes que faltan en el cache."""
+    pendientes = []
+    vistos = set()
+    for n in numeros:
+        sn = str(n or "").strip()
+        if sn and sn not in cache and sn not in vistos:
+            vistos.add(sn)
+            pendientes.append(sn)
+    if not pendientes:
+        return
+    filas = _get("solicitudes", filters={"numero": f"in.({','.join(pendientes)})"})
+    encontradas = {str(r.get("numero") or ""): r for r in filas}
+    for sn in pendientes:
+        cache[sn] = encontradas.get(sn, {})
+
+
+def _fecha_arribo(bloque: list, key_sol: str, cache: dict) -> str:
+    """Fecha de arribo (fecha_llegada) más temprana entre los registros del bloque."""
+    fechas = []
+    for reg in bloque:
+        sol = _informacion_solicitud(reg.get(key_sol), cache)
+        f = (sol.get("fecha_llegada") or "").strip()
+        if f:
+            fechas.append(f)
+    return min(fechas) if fechas else ""
+
+
+def _destino_por_bloque(bloque: list, key_sol: str, cache: dict) -> str:
+    """Destino (destinohosp) del bloque: CPZ tiene prioridad, luego RPX, sino el primero."""
+    destinos = []
+    for reg in bloque:
+        sol = _informacion_solicitud(reg.get(key_sol), cache)
+        d = (sol.get("destinohosp") or "").strip().upper()
+        if d and d not in destinos:
+            destinos.append(d)
+    if "CPZ" in destinos:
+        return "CPZ"
+    if "RPX" in destinos:
+        return "RPX"
+    return destinos[0] if destinos else ""
+
+
+def _poner_fecha(ws, fecha_llegada: str) -> None:
+    """Escribe la fecha de arribo en C18 (celda FECHA de la plantilla)."""
+    if not fecha_llegada:
+        return
+    try:
+        ws[_CELDA_FECHA] = datetime.strptime(fecha_llegada, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        ws[_CELDA_FECHA] = fecha_llegada
 
 
 def llenar_plantilla_salidas(registros: List[Dict], col_nombre: str,
                               col_depto: Optional[str], col_cama: Optional[str],
                               col_solicitud: Optional[str], col_transporte: Optional[str],
-                              ruta_destino: Path) -> int:
+                              ruta_destino: Path, destinohosp: str = "") -> int:
     if not RUTA_PLANTILLA_SALIDA.exists():
         raise FileNotFoundError(f"Plantilla no encontrada: {RUTA_PLANTILLA_SALIDA}")
+    if not registros:
+        return 0
     registros = sorted(registros, key=lambda f: (
-        (f.get(col_depto)     or "").upper(),
-        (f.get(col_solicitud) or "").upper(),
-        (f.get(col_nombre)    or "").upper(),
+        (f.get(col_depto)  or "").upper(),
+        (f.get(col_nombre) or "").upper(),
     ))
     shutil.copy2(RUTA_PLANTILLA_SALIDA, ruta_destino)
     wb = openpyxl.load_workbook(ruta_destino)
-    ws = wb["SALIDAS"]
-    for idx, fila in enumerate(registros):
-        r = _fila_salida(idx)
-        ws.cell(r, 3).value  = (fila.get(col_nombre)     or "").strip()
-        ws.cell(r, 4).value  = (fila.get(col_depto)      or "").strip() if col_depto     else ""
-        ws.cell(r, 6).value  = (fila.get(col_solicitud)  or "").strip() if col_solicitud else ""
-        ws.cell(r, 7).value  = (fila.get(col_cama)       or "").strip() if col_cama      else ""
-        ws.cell(r, 8).value  = (fila.get(col_transporte) or "").strip() if col_transporte else ""
+    ws_base = wb["SALIDAS"]
+
+    bloques = _dividir_bloques(registros)
+    hojas   = _hojas_por_bloque(wb, ws_base, len(registros))
+    cache   = {}
+    _precargar_solicitudes(cache, (f.get(col_solicitud) for f in registros))
+
+    for hoja, bloque in zip(hojas, bloques):
+        hoja[_CELDA_FECHA] = "=TODAY()"
+        dest = _destino_por_bloque(bloque, col_solicitud, cache) or (destinohosp or "").upper()
+        texto_destino = _DESTINO_A12.get(dest)
+        if texto_destino:
+            hoja["A12"] = texto_destino
+        for j, fila in enumerate(bloque):
+            r = _FILA_DATOS_INICIO + j
+            hoja.cell(r, 3).value  = (fila.get(col_nombre)     or "").strip()
+            hoja.cell(r, 4).value  = (fila.get(col_depto)      or "").strip() if col_depto     else ""
+            hoja.cell(r, 6).value  = (fila.get(col_solicitud)  or "").strip() if col_solicitud else ""
+            hoja.cell(r, 7).value  = (fila.get(col_cama)       or "").strip() if col_cama      else ""
+            hoja.cell(r, 8).value  = (fila.get(col_transporte) or "").strip() if col_transporte else ""
+
     wb.save(ruta_destino)
     return len(registros)
 
@@ -509,16 +665,6 @@ def llenar_plantilla_salidas(registros: List[Dict], col_nombre: str,
 # ──────────────────────────────────────────────────────────────
 #  Plantilla de entradas (altas)
 # ──────────────────────────────────────────────────────────────
-
-_FILA_INICIO_ENT = 22
-_POR_BLOQUE_ENT  = 15
-_PASO_ENT        = 17
-
-def _fila_entrada(idx: int) -> int:
-    b = idx // _POR_BLOQUE_ENT
-    p = idx %  _POR_BLOQUE_ENT
-    return _FILA_INICIO_ENT + (0 if b == 0 else 17 + (b-1)*_PASO_ENT) + p
-
 
 def leer_personal_de_xlsx(source: Union[Path, io.BytesIO]) -> List[Dict]:
     personal = []
@@ -567,23 +713,37 @@ def leer_personal_de_xlsx(source: Union[Path, io.BytesIO]) -> List[Dict]:
 def llenar_plantilla_entrada(registros: List[Dict], ruta_destino: Path) -> int:
     if not RUTA_PLANTILLA_ENTRADA.exists():
         raise FileNotFoundError(f"Plantilla no encontrada: {RUTA_PLANTILLA_ENTRADA}")
+    if not registros:
+        return 0
     registros = sorted(registros, key=lambda r: (
-        (r.get("compania")  or "").upper(),
-        (r.get("solicitud") or "").upper(),
-        (r.get("nombre")    or "").upper(),
+        (r.get("compania") or "").upper(),
+        (r.get("nombre")   or "").upper(),
     ))
     shutil.copy2(RUTA_PLANTILLA_ENTRADA, ruta_destino)
     wb = openpyxl.load_workbook(ruta_destino)
-    ws = wb["ENTRADA"]
-    for idx, reg in enumerate(registros):
-        f = _fila_entrada(idx)
-        ws.cell(f, 3).value  = reg.get("nombre",     "")
-        ws.cell(f, 4).value  = ""
-        ws.cell(f, 5).value  = reg.get("rfc",        "")
-        ws.cell(f, 6).value  = reg.get("compania",   "")
-        ws.cell(f, 7).value  = ""
-        ws.cell(f, 8).value  = reg.get("solicitud",  "")
-        ws.cell(f, 9).value  = ""
-        ws.cell(f, 10).value = reg.get("transporte", "")
+    ws_base = next((ws for ws in wb.worksheets if "ENTRAD" in ws.title.upper()),
+                   wb.worksheets[0])
+
+    bloques = _dividir_bloques(registros)
+    hojas   = _hojas_por_bloque(wb, ws_base, len(registros))
+    cache   = {}
+    _precargar_solicitudes(cache, (r.get("solicitud") for r in registros))
+
+    for hoja, bloque in zip(hojas, bloques):
+        _poner_fecha(hoja, _fecha_arribo(bloque, "solicitud", cache))
+        texto_destino = _DESTINO_A12.get(_destino_por_bloque(bloque, "solicitud", cache))
+        if texto_destino:
+            hoja["A12"] = texto_destino
+        for j, reg in enumerate(bloque):
+            f = _FILA_DATOS_INICIO + j
+            hoja.cell(f, 3).value  = reg.get("nombre",     "")
+            hoja.cell(f, 4).value  = ""
+            hoja.cell(f, 5).value  = reg.get("rfc",        "")
+            hoja.cell(f, 6).value  = reg.get("compania",   "")
+            hoja.cell(f, 7).value  = ""
+            hoja.cell(f, 8).value  = reg.get("solicitud",  "")
+            hoja.cell(f, 9).value  = ""
+            hoja.cell(f, 10).value = reg.get("transporte", "")
+
     wb.save(ruta_destino)
     return len(registros)

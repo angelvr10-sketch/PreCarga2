@@ -1,5 +1,9 @@
 const API_BASE = ''
 const REQUEST_TIMEOUT_MS = 30_000
+// Procesar un PDF inserta una fila por persona en Supabase, asi que un archivo
+// grande puede tardar mas que 30 s. Con el timeout corto se abortaba la peticion
+// aunque el backend siguiera trabajando y terminara bien.
+const UPLOAD_TIMEOUT_MS = 180_000
 
 export class ApiError extends Error {
   constructor(
@@ -14,6 +18,7 @@ export class ApiError extends Error {
 async function request<T>(
   endpoint: string,
   options: RequestInit = {},
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`
 
@@ -31,7 +36,7 @@ async function request<T>(
   }
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   config.signal = controller.signal
 
   let response: Response
@@ -79,10 +84,14 @@ export const api = {
     request<T>(endpoint, { method: 'PATCH', body: body as BodyInit }),
   delete: <T>(endpoint: string) =>
     request<T>(endpoint, { method: 'DELETE' }),
-  upload: <T>(endpoint: string, formData: FormData) =>
-    request<T>(endpoint, {
-      method: 'POST',
-      body: formData,
-      headers: {},
-    }),
+  upload: <T>(endpoint: string, formData: FormData, timeoutMs: number = UPLOAD_TIMEOUT_MS) =>
+    request<T>(
+      endpoint,
+      {
+        method: 'POST',
+        body: formData,
+        headers: {},
+      },
+      timeoutMs,
+    ),
 }

@@ -3,7 +3,6 @@ import csv
 import io
 import uuid
 import tempfile
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -20,7 +19,8 @@ from core import (
 from core.config import RUTA_PLANTILLA_SALIDA, RUTA_PLANTILLA_ENTRADA
 from core.auth import get_current_user, puede_descargar, contar_descarga, MAX_DESCARGAS_GRATIS
 from core.db import obtener_personal_baja_db
-from core.supabase_db import upload_file_to_storage, download_file_from_storage, delete_file_from_storage, _get
+from core.supabase_db import (upload_file_to_storage, download_file_from_storage,
+                            delete_file_from_storage, _get, _get_all)
 
 router = APIRouter(prefix="/api")
 
@@ -28,29 +28,30 @@ router = APIRouter(prefix="/api")
 @router.post("/procesar-pdf")
 async def procesar_pdf(file: UploadFile = File(...)):
     if not file.filename.lower().endswith(".pdf"):
-        return JSONResponse({"ok": False, "mensaje": "Solo se aceptan archivos PDF"})
+        return JSONResponse({"ok": False, "mensaje": "Solo se aceptan archivos PDF", "archivo": ""})
     try:
         contenido = await file.read()
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             tmp.write(contenido)
             ruta_tmp = Path(tmp.name)
 
-        exito, mensaje = llenar_plantilla(ruta_tmp)
+        exito, mensaje, folio = llenar_plantilla(ruta_tmp)
         ruta_tmp.unlink(missing_ok=True)
-        
-        if exito:
-            # El xlsx de cada solicitud ya NO se guarda en el bucket:
-            # se regenera bajo demanda desde la BD (ver /api/descargar).
-            archivos = sorted(SOL_DIR.glob("*.xlsx"), key=os.path.getmtime, reverse=True)
-            if archivos:
-                archivo_gen = archivos[0]
-                archivo_gen.unlink()
-                
-        return JSONResponse({"ok": exito, "mensaje": mensaje})
+
+        # `archivo` es el nombre del xlsx para que el frontend lo descargue solo.
+        # /api/descargar lo regenera desde la BD, asi que no hace falta guardar.
+        archivo = f"{folio}.xlsx" if (exito and folio) else ""
+        if archivo:
+            # Se borra el xlsx de ESTA solicitud por nombre. Antes se hacia
+            # "el mas reciente de SOL_DIR": con dos usuarios procesando a la
+            # vez, ese sort por mtime podia borrar el archivo del otro.
+            (SOL_DIR / archivo).unlink(missing_ok=True)
+
+        return JSONResponse({"ok": exito, "mensaje": mensaje, "archivo": archivo})
 
     except Exception as e:
         logger.error(f"Error en /api/procesar-pdf: {e}")
-        return JSONResponse({"ok": False, "mensaje": str(e)})
+        return JSONResponse({"ok": False, "mensaje": str(e), "archivo": ""})
 
 
 # ── Util: detectar delimitador de CSV ──────────────────────────
@@ -133,6 +134,16 @@ async def buscar_bajas(
     nombre_a_sol: dict[str, str] = {}
     trans_por_sol: dict[str, str] = {}
 
+    # Destino por solicitud: alimenta la celda A12 de la plantilla de salidas.
+    nums = [s.replace("-B", "") if s.endswith("-B") else s for s in solicitudes]
+    dest_por_sol: dict[str, str] = {}
+    try:
+        for s in _get("solicitudes", select="numero,destinohosp",
+                      filters={"numero": f"in.({','.join(nums)})"}):
+            dest_por_sol[str(s.get("numero") or "")] = (s.get("destinohosp") or "").strip().upper()
+    except Exception:
+        logger.error("Error leyendo destinohosp para la plantilla de salidas")
+
     for nombre_sol in solicitudes:
         num = nombre_sol.replace("-B", "") if nombre_sol.endswith("-B") else nombre_sol
         personal_baja = obtener_personal_baja_db(num)
@@ -185,6 +196,10 @@ async def buscar_bajas(
     ts   = datetime.now().strftime("%Y%m%d_%H%M%S")
     dest = SOL_DIR / f"_salidas_{ts}.xlsx"
 
+    # Fallback de A12 cuando el bloque no resuelve el destino por si mismo:
+    # se usa el primer destino encontrado entre las solicitudes seleccionadas.
+    destinohosp_val = next((d for d in (dest_por_sol.get(n, "") for n in nums) if d), "")
+
     try:
         n = llenar_plantilla_salidas(
             registros     = encontrados,
@@ -194,6 +209,7 @@ async def buscar_bajas(
             col_solicitud = "__solicitud__",
             col_transporte= "__transporte__",
             ruta_destino  = dest,
+            destinohosp   = destinohosp_val,
         )
         upload_file_to_storage("solicitudes", dest, dest.name)
         dest.unlink()
@@ -225,10 +241,13 @@ async def generar_entradas(solicitudes: list[str] = Form(...)):
     if sols:
         ids = [s["id"] for s in sols]
         try:
-            pers = _get("personal",
-                        select="solicitud_id,rfc,nombre",
-                        filters={"solicitud_id": f"in.({','.join(map(str, ids))})",
-                                 "tipo": "eq.sube"})
+            # _get_all, NO _get: sin limit esta _get se corta en 1000 filas
+            # (cap de PostgREST) y las solicitudes siguientes desaparecian
+            # del archivo sin ningun error.
+            pers = _get_all("personal",
+                            select="solicitud_id,rfc,nombre",
+                            filters={"solicitud_id": f"in.({','.join(map(str, ids))})",
+                                     "tipo": "eq.sube"})
         except Exception:
             pers = []
             logger.error("Error leyendo personal para generar entradas")

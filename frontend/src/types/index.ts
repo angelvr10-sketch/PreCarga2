@@ -46,8 +46,7 @@ export interface LogEntry {
 
 export interface DashboardStats {
   total_solicitudes: number
-  total_personal: number
-  solicitudes_hoy: number
+  total_movimientos: number
   altas_generadas: number
   bajas_procesadas: number
   total_companias: number

@@ -11,14 +11,29 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { LogOut, CreditCard, Search, Bell, Settings, Menu } from 'lucide-react'
+import { LogOut, Search, Bell, Menu } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
+import { SearchPalette } from '@/components/layout/search-palette'
 
 export function Topbar() {
   const { user } = useAuth()
   const logout = useLogout()
   const { toggleMenu } = useSidebar()
   const navigate = useNavigate()
+  const [searchOpen, setSearchOpen] = useState(false)
+
+  // Atajo global: Ctrl+K (Windows/Linux) y Cmd+K (Mac) abren la paleta.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setSearchOpen((o) => !o)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <header className="surface-mica sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-[rgb(255_255_255_/_0.06)] px-4 md:px-6">
@@ -36,7 +51,7 @@ export function Topbar() {
 
         <button
           type="button"
-          onClick={() => navigate({ to: '/dashboard' })}
+          onClick={() => setSearchOpen(true)}
           className="group flex h-8 w-56 items-center gap-2 rounded-md border border-[rgb(255_255_255_/_0.08)] bg-[rgb(255_255_255_/_0.04)] px-3 text-left text-[13px] text-muted-foreground transition-colors hover:bg-[rgb(255_255_255_/_0.07)] sm:w-72"
         >
           <Search className="h-3.5 w-3.5 opacity-70" strokeWidth={2} />
@@ -58,15 +73,8 @@ export function Topbar() {
           <Bell className="h-4 w-4" strokeWidth={2} />
         </Button>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 rounded-md text-muted-foreground hover:bg-[rgb(255_255_255_/_0.06)] hover:text-foreground"
-          aria-label="Configuración"
-          onClick={() => navigate({ to: '/planes' })}
-        >
-          <Settings className="h-4 w-4" strokeWidth={2} />
-        </Button>
+        {/* Boton de Configuracion retirado temporalmente: navegaba a /planes.
+            Se reactiva junto con el item del menu de usuario. */}
 
         <div className="mx-2 h-5 w-px fluent-divider" />
 
@@ -94,11 +102,8 @@ export function Topbar() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate({ to: '/planes' })}>
-              <CreditCard className="mr-2 h-4 w-4 opacity-80" />
-              <span>Planes</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
+            {/* Item de /planes retirado temporalmente. Se elimino tambien el
+                separador que lo acompanaba para no dejar dos seguidos. */}
             <DropdownMenuItem onClick={() => void logout()} className="text-destructive focus:text-destructive">
               <LogOut className="mr-2 h-4 w-4" />
               <span>Cerrar Sesión</span>
@@ -106,6 +111,7 @@ export function Topbar() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </header>
   )
 }

@@ -11,10 +11,10 @@ import {
   Package,
   ScrollText,
   Users,
-  CreditCard,
   LogOut,
   ChevronsLeft,
   ChevronsRight,
+  Rocket,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
@@ -101,6 +101,20 @@ export function Sidebar() {
             </Link>
           ))}
 
+          {/* Novedades no es una ruta: abre el modal via evento de window */}
+          <button
+            type="button"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent('precarga:open-changelog'))
+              closeMobile()
+            }}
+            className={baseClass}
+            title={ct ? 'Novedades' : undefined}
+          >
+            <Rocket className="h-4 w-4 shrink-0 opacity-80 group-hover:opacity-100" strokeWidth={2} />
+            {!ct && <span className="truncate">Novedades</span>}
+          </button>
+
           {user?.admin && (
             <>
               {!ct && (
@@ -136,18 +150,9 @@ export function Sidebar() {
         <div className={cn('h-px fluent-divider', ct ? 'mx-2' : 'mx-3')} />
 
         {/* Footer */}
+        {/* Link a /planes retirado temporalmente. Para reactivarlo: restaurar este
+            bloque <Link to="/planes"> y el import de CreditCard. */}
         <div className={cn('space-y-0.5', ct ? 'p-2' : 'p-3')}>
-          <Link
-            to="/planes"
-            className={baseClass}
-            activeProps={{ className: cn(baseClass, activeClass) }}
-            title={ct ? 'Planes' : undefined}
-            onClick={closeMobile}
-          >
-            <CreditCard className="h-4 w-4 shrink-0 opacity-80 group-hover:opacity-100" strokeWidth={2} />
-            {!ct && <span>Planes</span>}
-          </Link>
-
           <Button
             variant="ghost"
             onClick={() => {

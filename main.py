@@ -51,6 +51,13 @@ def startup():
     init_solicitudes_db()
     init_stripe_payments_db()
 
+# El cliente HTTP de Supabase es persistente (keep-alive). Sin cerrarlo al
+# apagar, cada recarga de `uvicorn --reload` deja el pool de sockets abierto.
+@app.on_event("shutdown")
+def shutdown():
+    from core.supabase_db import cerrar_cliente
+    cerrar_cliente()
+
 # ── Middleware ────────────────────────────────────────────────
 # El frontend se sirve en el mismo origen que la API, asi que no hace
 # falta CORS. Se comprime toda respuesta >1 KB (CSS, JS, JSON y el

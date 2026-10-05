@@ -10,9 +10,22 @@ export const bajasApi = {
     return api.upload<{ ok: boolean; token: string; columnas: number }>('/api/cargar-bd', formData)
   },
 
-  buscarBajas: (solicitudes: string[], bdToken: string) =>
-    api.post<{ ok: boolean; encontrados: number; archivo: string }>('/api/buscar-bajas', {
-      solicitudes,
-      bd_token: bdToken,
-    }),
+  // Este endpoint declara `Form(...)` en el backend (multipart), no JSON.
+  // Enviandolo con api.post + objeto, FastAPI no encontraba los campos y
+  // respondia 422 con dos "Field required" (solicitudes y bd_token).
+  // `solicitudes` es una lista: FormData la lleva como campos repetidos,
+  // igual que hace generarEntradas con generar-entradas.
+  buscarBajas: (solicitudes: string[], bdToken: string) => {
+    const formData = new FormData()
+    for (const folio of solicitudes) formData.append('solicitudes', folio)
+    formData.append('bd_token', bdToken)
+    // `mensaje` solo viene cuando ok:false (el backend responde HTTP 200 con el
+// motivo en el cuerpo, no con un 4xx), por eso es opcional.
+    return api.upload<{
+      ok: boolean
+      encontrados?: number
+      archivo?: string
+      mensaje?: string
+    }>('/api/buscar-bajas', formData)
+  },
 }

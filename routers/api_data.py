@@ -11,7 +11,7 @@ from core import listar_solicitudes_xlsx
 from core.supabase_db import (
     leer_companias_supabase, agregar_compania_supabase, eliminar_compania_supabase,
     leer_activos_supabase, agregar_activo_supabase, eliminar_activo_supabase,
-    _get, _count_distinct, _count_rows,
+    _get, _count_rows,
 )
 from core.db import listar_bajas_db, listar_solicitudes_db
 from core.auth import get_user_from_token, listar_usuarios
@@ -43,19 +43,26 @@ def _require_admin(request: Request):
 @router.get("/dashboard/stats")
 def dashboard_stats(request: Request):
     _require_auth(request)
-    
-    res = listar_solicitudes_xlsx()
-    sol_count = res[1] if isinstance(res, tuple) else len(res)
 
-    hoy = date.today().isoformat()
-    
+    # Altas y bajas se cuentan sobre la tabla `personal` (una fila por persona),
+    # NO sobre `solicitudes`: contar solicitudes mezcla dos unidades distintas
+    # y subestima ~19x. Un count=exact con Range 0-0 da el total real en el
+    # header Content-Range sin transferir filas, asi que no sufre el cap de
+    # 1000 filas por response de PostgREST.
+    #
+    # estos conteos cuadran con el grafico "Altas vs Bajas", que suma
+    # solicitudes.n_personas / solicitudes.n_bajas: ambas vias dan 5059 altas
+    # y 3493 bajas.
     return {
-        "total_solicitudes": sol_count,
-        "total_personal": _count_distinct("personal", "rfc"),
-        "solicitudes_hoy": _count_rows("solicitudes", {"fecha_llegada": f"eq.{hoy}"}),
-        "altas_generadas": 0,
-        "bajas_procesadas": len(listar_bajas_db()),
-        "total_companias": len(leer_companias_supabase()),
+        "total_solicitudes": _count_rows("solicitudes"),
+        # Un "movimiento" es una fila de `personal`: un alta o una baja. No es
+        # un padrón de personas: el mismo RFC aparece una vez por cada solicitud
+        # en que sube o baja, asi que este total es >= que el de RFC distintos.
+        # Es la suma de las dos tarjetas vecinas (ver `hint` en el frontend).
+        "total_movimientos": _count_rows("personal"),
+        "altas_generadas": _count_rows("personal", {"tipo": "eq.sube"}),
+        "bajas_procesadas": _count_rows("personal", {"tipo": "eq.baja"}),
+        "total_companias": _count_rows("companias"),
     }
 
 
