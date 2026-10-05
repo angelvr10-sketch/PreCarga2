@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { BrandLockup } from '@/components/brand'
+import { MockupEnMarco, type ClaveProducto } from '@/components/landing/producto-mockup'
 import {
   Zap,
   FileText,
@@ -15,6 +15,21 @@ import {
   ScrollText,
   Menu,
   X,
+  Ship,
+  Bot,
+  ClipboardList,
+  ChevronLeft,
+  ChevronRight,
+  Pause,
+  Play,
+  BarChart3,
+  TrendingUp,
+  FileSpreadsheet,
+  FileDown,
+  MonitorDown,
+  RefreshCw,
+  Users,
+  type LucideIcon,
 } from 'lucide-react'
 
 const features = [
@@ -63,20 +78,208 @@ const stats = [
   { value: '100%', label: 'Trazable' },
 ]
 
+/* ============================================================
+   Productos del carrusel del hero.
+
+   `ctas` acepta rutas internas ('/login') o URLs externas
+   ('https://...'); el render distingue una de otra.
+   Poner null en una entrada oculta ese boton.
+
+   `titulo` va partido en dos lineas: la primera en blanco, la segunda con
+   el degradado azul. Se guarda como par explicito y no se parte por palabras
+   porque el corte automatico duplicaba la conjunction.
+
+   OJO: la copy de PRECARGA BOT y COMANDAS PRO es un BORRADOR.
+   Reemplazar `descripcion`, `puntos`, `cierre` y `ctas` por el texto real y
+   la URL publica de cada producto.
+   ============================================================ */
+interface Producto {
+  clave: ClaveProducto
+  nombre: string
+  /** Texto del pill superior. */
+  etiqueta: string
+  titulo: [string, string]
+  descripcion: string
+  /** Las tres filas con icono de la columna izquierda. */
+  puntos: { icono: LucideIcon; titulo: string; detalle: string }[]
+  /** Frase de cierre con barra azul a la izquierda. */
+  cierre: string
+  icono: LucideIcon
+  ctas: { etiqueta: string; to: string | null }[]
+}
+
+const productos: Producto[] = [
+  {
+    clave: 'precarga',
+    nombre: 'PreCarga',
+    etiqueta: 'Dashboard en tiempo real',
+    titulo: ['Control total', 'de tus operaciones'],
+    descripcion:
+      'Visualiza, analiza y toma decisiones con información en tiempo real. Un dashboard con la vista completa de tus operaciones marítimas.',
+    puntos: [
+      {
+        icono: FileSpreadsheet,
+        titulo: 'PDF a Excel automático',
+        detalle:
+          'Convierte tus solicitudes en PDF a plantillas de Excel automáticamente, listas para cargar.',
+      },
+      {
+        icono: BarChart3,
+        titulo: 'Métricas clave',
+        detalle: 'Total de solicitudes, movimientos, altas, bajas y más.',
+      },
+      {
+        icono: TrendingUp,
+        titulo: 'Gráficos interactivos',
+        detalle: 'Analiza tendencias y patrones en un solo vistazo.',
+      },
+      {
+        icono: Zap,
+        titulo: 'Actualización en tiempo real',
+        detalle: 'Información siempre al día, sin complicaciones.',
+      },
+    ],
+    cierre: 'Más que un dashboard, es el control de tu operación.',
+    icono: Ship,
+    ctas: [
+      { etiqueta: 'Iniciar Sesión', to: '/login' },
+      { etiqueta: 'Crear Cuenta', to: '/registro' },
+    ],
+  },
+  {
+    clave: 'bot',
+    nombre: 'PreCarga Bot',
+    etiqueta: 'Aplicación de escritorio',
+    titulo: ['Carga alimentos al área', 'automáticamente'],
+    descripcion:
+      'Aplicación de escritorio para Windows que automatiza la carga de alimentos al área de tus barcos. Deja de capturarlos uno por uno.',
+    puntos: [
+      {
+        icono: Bot,
+        titulo: 'Carga automática',
+        detalle: 'Sube los alimentos al área sin capturarlos a mano.',
+      },
+      {
+        icono: MonitorDown,
+        titulo: 'Para Windows',
+        detalle: 'Instalador .exe: se instala y corre en tu equipo.',
+      },
+      {
+        icono: RefreshCw,
+        titulo: 'Versiones siempre al día',
+        detalle: 'Descarga la última versión desde la página oficial.',
+      },
+    ],
+    cierre: 'Más que un formulario, es un bot que trabaja por ti.',
+    icono: Bot,
+    ctas: [
+      { etiqueta: 'Descargar para Windows', to: '/precarga-bot' },
+      { etiqueta: 'Saber más', to: '/precarga-bot#versiones' },
+    ],
+  },
+  {
+    clave: 'comandas',
+    nombre: 'Comandas Pro',
+    etiqueta: 'Alimentación a bordo',
+    titulo: ['Las comandas de cada barco', 'bajo tu control'],
+    descripcion:
+      'Comandas de alimentos para los trabajadores de tus barcos: registra lo que pide cada tripulación y genera reportes en PDF listos para entregar.',
+    puntos: [
+      {
+        icono: ClipboardList,
+        titulo: 'Comandas por buque',
+        detalle: 'Registra cada comanda con su fecha, destino y turno.',
+      },
+      {
+        icono: Users,
+        titulo: 'Control de PAX',
+        detalle: 'Distribución de pasajeros por destino, transporte y compañía.',
+      },
+      {
+        icono: FileDown,
+        titulo: 'Reportes en PDF',
+        detalle: 'Reporte estadístico listo para compartir, con el detalle por compañía.',
+      },
+    ],
+    cierre: 'Más que una comanda, es el control de la alimentación a bordo.',
+    icono: ClipboardList,
+    ctas: [
+      { etiqueta: 'Ir a Comandas Pro', to: 'https://comandas-opq6.onrender.com' },
+      { etiqueta: 'Saber más', to: '#acerca' },
+    ],
+  },
+]
+
+// Milisegundos que cada slide queda en pantalla antes de avanzar solo.
+const MS_SLIDE = 7000
+
 export default function Landing() {
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [indice, setIndice] = useState(0)
+  const [pausado, setPausado] = useState(false)
 
-  const go = (to: string) => {
+  const producto = productos[indice]
+
+  const irA = (i: number) => setIndice((i + productos.length) % productos.length)
+
+  // Un cambio en el indice reinicia el temporizador: si el usuario avanza a
+  // mano, tiene que ver el slide completo, no quedar con 2 s de lectura.
+  //
+  // prefers-reduced-motion tambien desactiva el avance automatico: en el hero
+  // el texto cambia solo y ese movimiento es justo lo que el usuario pidio
+  // evitar. Los controles manuales siguen funcionando.
+  useEffect(() => {
+    if (pausado) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const t = setTimeout(() => setIndice((i) => (i + 1) % productos.length), MS_SLIDE)
+    return () => clearTimeout(t)
+  }, [indice, pausado])
+
+  const go = (to: string, hash?: string) => {
     setMenuOpen(false)
-    navigate({ to })
+    navigate({ to, hash: hash || undefined })
+  }
+
+  // Los CTA del carrusel tienen cuatro destinos posibles: URL externa (se abre
+  // en otra pestana), ancla de esta pagina (#seccion), ruta del router, o ruta
+  // con ancla ('/precarga-bot#versiones'). Sin los dos ultimos casos,
+  // navigate() los interpretaria como una ruta incompleta.
+  const Cta = ({ etiqueta, to }: { etiqueta: string; to: string | null }) => {
+    if (!to) return null
+
+    if (/^https?:\/\//.test(to)) {
+      return (
+        <Button size="lg" className="gap-2 px-7" asChild>
+          <a href={to} target="_blank" rel="noreferrer noopener">
+            {etiqueta}
+          </a>
+        </Button>
+      )
+    }
+
+    if (to.startsWith('#')) {
+      return (
+        <Button size="lg" variant="outline" className="gap-2 px-7" asChild>
+          <a href={to}>{etiqueta}</a>
+        </Button>
+      )
+    }
+
+    const [ruta, ancla] = to.split('#')
+
+    return (
+      <Button size="lg" className="gap-2 px-7" onClick={() => go(ruta, ancla)}>
+        {etiqueta}
+      </Button>
+    )
   }
 
   return (
     <div className="flex min-h-screen flex-col scroll-smooth">
       <header className="sticky top-0 z-50 flex items-center justify-between border-b border-border/50 bg-background/80 px-4 py-3 backdrop-blur-xl sm:px-6">
         <a href="#inicio" className="flex items-center">
-          <BrandLockup className="h-8" />
+          <BrandLockup className="h-10 sm:h-12" />
         </a>
 
         <nav className="hidden items-center gap-6 md:flex">
@@ -146,40 +349,169 @@ export default function Landing() {
       )}
 
       <main className="flex-1">
+        {/* El hero lleva su propio fondo azul, distinto del tema neutro del
+            resto de la pagina: es lo que separa la promesa del producto del
+            contenido institucional de abajo. */}
         <section
           id="inicio"
-          className="relative flex min-h-[90vh] flex-col items-center justify-center overflow-hidden px-6 py-24 text-center"
+          className="relative isolate flex flex-col overflow-hidden px-6 pb-14 pt-14 lg:min-h-[94vh] lg:justify-center lg:pb-20 lg:pt-20"
         >
-          <div className="absolute inset-0 bg-gradient-to-b from-primary/10 via-primary/5 to-background" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/15 via-transparent to-transparent" />
+          <div className="pointer-events-none absolute inset-0 -z-10 bg-[#070d1c]" />
+          <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-b from-[#0c1a3d] via-[#081227] to-[#070d1c]" />
+          <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_78%_22%,rgba(37,99,235,0.42),transparent_58%)]" />
+          <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_6%_88%,rgba(124,58,237,0.30),transparent_58%)]" />
 
-          <div className="relative">
-            <BrandLockup className="mx-auto h-16 sm:h-20" />
+          {/* El logo ya no se repite en el centro del hero: la marca vive solo
+              en el encabezado y duplicarla compite con el titulo del producto,
+              que es lo que el visitante tiene que leer primero. */}
+          <div className="relative mx-auto w-full max-w-7xl">
+            {/* Carrusel de productos.
 
-            <Badge variant="accent" className="mt-8 gap-1.5 px-3 py-1 text-[12.5px]">
-              <Zap className="h-3.5 w-3.5" />
-              Sistema de Gestión de Solicitudes de Hospedaje
-            </Badge>
+                SIN aria-live a proposito: el slide entero (pill, titulo, 3
+                filas y 2 botones) se anunciaria en cada cambio y un lector de
+                pantalla no puede saltarse un anuncio largo con la barra
+                espaciadora. El avance automatico se pausa ademas con el boton de
+                play/pausa, que es lo que pide WCAG 2.2.2 para contenido que se
+                actualiza solo.
 
-            <h1 className="mt-6 max-w-4xl text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl">
-              Gestiona tus Solicitudes
-              <span className="block bg-gradient-to-r from-white via-white to-[hsl(206_100%_72%)] bg-clip-text text-transparent">
-                de forma inteligente
-              </span>
-            </h1>
+                La key del <div> interior reinicia la animacion de entrada. */}
+            <div
+              key={indice}
+              className="fluent-anim-fade"
+              role="group"
+              aria-roledescription="carrusel"
+              aria-label="Nuestros productos"
+            >
+              {/* El grid arranca en lg: en pantallas anchas la captura se va a
+                  la derecha y el texto a la izquierda, como en el diseno de
+                  referencia. Por debajo de lg se apilan con el texto primero. */}
+              {/* Reparto 0.95/1.05 en vez de 0.82/1.18: la captura de Comandas Pro es
+                  apaisada (2.11:1) y con la columna mas angosta quedaba baja
+                  frente al bloque de texto. */}
+              <div className="grid items-center gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-14">
+                {/* ---------------- columna de texto ---------------- */}
+                <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
+                  {/* pill: icono + etiqueta del producto, con el contador como
+                      sufijo para que se sepa cuantos hay */}
+                  <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-4 py-1.5 text-[13px] font-medium text-white">
+                    <producto.icono className="h-4 w-4 text-primary" />
+                    {producto.etiqueta}
+                    <span className="text-white/45">
+                      {indice + 1}/{productos.length}
+                    </span>
+                  </span>
 
-            <p className="mx-auto mt-5 max-w-2xl text-lg text-muted-foreground sm:text-xl">
-              Sistema web para procesamiento de documentos PDF de alta y baja de personal.
-              <br className="hidden sm:block" /> Optimizado para Logística Marina.
-            </p>
+                  <h1 className="mt-6 text-[2.6rem] font-extrabold leading-[1.04] tracking-tight text-white sm:text-6xl">
+                    {producto.titulo[0]}
+                    <span className="block bg-gradient-to-r from-[#7dd3fc] via-[#38bdf8] to-[#818cf8] bg-clip-text text-transparent">
+                      {producto.titulo[1]}
+                    </span>
+                  </h1>
 
-            <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
-              <Button size="lg" className="gap-2 px-7" onClick={() => go('/login')}>
-                Iniciar Sesión
-              </Button>
-              <Button size="lg" variant="outline" className="gap-2 px-7" onClick={() => go('/registro')}>
-                Crear Cuenta
-              </Button>
+                  <p className="mt-5 max-w-lg text-base leading-relaxed text-muted-foreground sm:text-lg">
+                    {producto.descripcion}
+                  </p>
+
+                  {/* las tres filas con icono del diseno de referencia */}
+                  <ul className="mt-8 grid w-full max-w-lg gap-5">
+                    {producto.puntos.map((p) => {
+                      const Icono = p.icono
+                      return (
+                        <li key={p.titulo} className="flex items-start gap-4 text-left">
+                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 ring-1 ring-inset ring-primary/25">
+                            <Icono className="h-5 w-5 text-[#38bdf8]" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-[15px] font-semibold text-white">
+                              {p.titulo}
+                            </span>
+                            <span className="mt-0.5 block text-sm leading-relaxed text-muted-foreground">
+                              {p.detalle}
+                            </span>
+                          </span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+
+                  {/* cierre con barra azul */}
+                  <p className="mt-9 max-w-lg border-l-2 border-primary pl-4 text-left text-[15px] leading-relaxed text-muted-foreground">
+                    {producto.cierre.split(',')[0]},
+                    <span className="mt-0.5 block font-semibold text-[#7dd3fc]">
+                      {producto.cierre.slice(producto.cierre.indexOf(',') + 1).trim()}
+                    </span>
+                  </p>
+
+                  <div className="mt-8 flex flex-wrap items-center justify-center gap-3 lg:justify-start">
+                    {producto.ctas.map((cta) => (
+                      <Cta key={cta.etiqueta} {...cta} />
+                    ))}
+                  </div>
+                </div>
+
+                {/* ---------------- columna de la captura ---------------- */}
+                {/* Tope de ancho en movil: sin el, el SVG escalaria a 900px+ y la
+                    captura se comeria el alto del slide, empujando los controles
+                    fuera de pantalla. */}
+                <div className="relative mx-auto w-full max-w-[21rem] sm:max-w-lg lg:max-w-none">
+                  {/* resplandor detras del marco, del mismo azul del diseno */}
+                  <div className="pointer-events-none absolute -inset-6 -z-10 rounded-[2rem] bg-[radial-gradient(ellipse_at_center,rgba(0,120,212,0.35),transparent_70%)]" />
+                  <MockupEnMarco clave={producto.clave} />
+                </div>
+              </div>
+            </div>
+
+            {/* Controles. Se quedan visibles siempre: sin avance manual el
+                carrusel es solo decoracion y no hay forma de volver atras. */}
+            <div className="mt-9 flex items-center justify-center gap-5 lg:mt-10">
+              <button
+                type="button"
+                aria-label="Producto anterior"
+                onClick={() => irA(indice - 1)}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-border/50 bg-background/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div className="flex items-center gap-2.5">
+                {productos.map((p, i) => (
+                  <button
+                    key={p.clave}
+                    type="button"
+                    aria-label={`Producto ${i + 1} de ${productos.length}: ${p.nombre}`}
+                    aria-current={i === indice}
+                    onClick={() => irA(i)}
+                    onMouseEnter={() => setPausado(true)}
+                    onMouseLeave={() => setPausado(false)}
+                    className={cn(
+                      'h-2 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                      i === indice
+                        ? 'w-8 bg-primary'
+                        : 'w-2 bg-muted-foreground/35 hover:bg-muted-foreground/60',
+                    )}
+                  />
+                ))}
+              </div>
+
+              {/* WCAG 2.2.2: el avance automatico tiene que poder detenerse.
+                  Sin este boton el texto que rota solo no tiene pausa. */}
+              <button
+                type="button"
+                aria-label={pausado ? 'Reanudar avance automático' : 'Pausar avance automático'}
+                onClick={() => setPausado((p) => !p)}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-border/50 bg-background/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {pausado ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+              </button>
+
+              <button
+                type="button"
+                aria-label="Producto siguiente"
+                onClick={() => irA(indice + 1)}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-border/50 bg-background/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
           </div>
         </section>

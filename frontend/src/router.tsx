@@ -38,6 +38,7 @@ const protectedLayout = createRoute({
 })
 
 const Landing = lazy(() => import('@/routes/landing'))
+const PreCargaBot = lazy(() => import('@/routes/precarga-bot'))
 const Login = lazy(() => import('@/routes/login'))
 const Registro = lazy(() => import('@/routes/registro'))
 const Verificar = lazy(() => import('@/routes/verificar'))
@@ -77,6 +78,12 @@ const landingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
   component: () => <LazyRoute component={Landing} />,
+})
+
+const precargaBotRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/precarga-bot',
+  component: () => <LazyRoute component={PreCargaBot} />,
 })
 
 const loginRoute = createRoute({
@@ -174,6 +181,7 @@ const stripeCancelRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   landingRoute,
+  precargaBotRoute,
   loginRoute,
   registroRoute,
   verificarRoute,

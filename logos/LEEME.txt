@@ -1,0 +1,12 @@
+PreCarga - paquete de logo para web
+svg/  vectoriales (escalan sin perder calidad). 'dark' = para fondos oscuros, 'light' = para fondos claros.
+png/  versiones con fondo transparente (1600 px de ancho).
+favicon/  favicon.ico, favicon-16/32, icon-192/512, apple-touch-icon.
+
+HTML sugerido en <head>:
+<link rel="icon" href="/favicon/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32.png">
+<link rel="apple-touch-icon" href="/favicon/apple-touch-icon.png">
+
+Logo en la pagina:
+<img src="/svg/precarga-horizontal-dark.svg" alt="PreCarga Operaciones Marítimas" height="48">
