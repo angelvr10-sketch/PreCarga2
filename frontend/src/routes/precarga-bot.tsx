@@ -3,7 +3,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { BrandLockup } from '@/components/brand'
 import {
   Bot,
-  Download,
   MonitorDown,
   RefreshCw,
   ShieldCheck,
@@ -11,82 +10,47 @@ import {
   Check,
   ExternalLink,
   ArrowLeft,
+  FlaskConical,
 } from 'lucide-react'
 
 /* ============================================================
-   Pagina de descarga de PreCarga Bot.
+   Pagina de PreCarga Bot.
 
    Estatica a proposito: no pide sesion ni consulta la API, asi que se puede
    publicar como HTML plano si algun dia se quiere separar de este proyecto.
 
-   PARA PUBLICAR UNA VERSION NUEVA: agregar el objeto al inicio de VERSIONES y
-   subir el .exe a /public/descargas con el nombre de `archivo`. Nada mas.
-   El `peso` se escribe a mano porque la pagina es estatica y no hay forma de
-   saber el tamano del archivo sin pedirlo al servidor.
+   El proyecto esta en BETA 1 y todavia no hay instalador publico, asi que
+   no hay descargas: por eso las CTAs abren un aviso de "proximamente" en vez
+   de enlazar a un .exe.
+
+   QUE HAY QUE TOCAR PARA PUBLICAR LA PRIMERA BETA:
+     - poner'se VERSION.salida = false para quitar el aviso
+     - poner el .exe en /public/descargas y habilitar el campo `archivo`
+     - revisar que los `cambios` sean los de la entrega real
    ============================================================ */
 
 interface Version {
+  /** Etiqueta visible. Es la que va en la tarjeta y en el pie. */
   numero: string
-  fecha: string
-  archivo: string
+  /** Si es false, la pagina muestra el aviso de "proximamente". */
+  salida: boolean
+  /** Ruta del .exe. Solo se usa cuando `salida` es true. */
+  archivo: string | null
   peso: string
-  recomendada: boolean
   cambios: string[]
 }
 
-const VERSIONES: Version[] = [
-  {
-    numero: '1.4.2',
-    fecha: '5 de octubre de 2026',
-    archivo: '/descargas/PreCargaBot-1.4.2-setup.exe',
-    peso: '18.4 MB',
-    recomendada: true,
-    cambios: [
-      'Reintenta la carga de un registro si el sitio responde con error.',
-      'Muestra el progreso por comanda y no solo el total.',
-      'Permite pausar y reanudar la carga sin perder lo ya subido.',
-    ],
-  },
-  {
-    numero: '1.4.1',
-    fecha: '28 de septiembre de 2026',
-    archivo: '/descargas/PreCargaBot-1.4.1-setup.exe',
-    peso: '18.2 MB',
-    recomendada: false,
-    cambios: [
-      'Corrige el corte de línea con acentos en el destino.',
-      'Guarda la configuración de la última carga usada.',
-    ],
-  },
-  {
-    numero: '1.4.0',
-    fecha: '19 de septiembre de 2026',
-    archivo: '/descargas/PreCargaBot-1.4.0-setup.exe',
-    peso: '18.0 MB',
-    recomendada: false,
-    cambios: [
-      'Bitácora de la carga con cada registro enviado.',
-      'Detecta registros duplicados antes de subirlos.',
-    ],
-  },
-  {
-    numero: '1.3.6',
-    fecha: '2 de septiembre de 2026',
-    archivo: '/descargas/PreCargaBot-1.3.6-setup.exe',
-    peso: '17.6 MB',
-    recomendada: false,
-    cambios: [
-      'Primera versión pública.',
-      'Carga automática de alimentos al área.',
-    ],
-  },
-]
-
-const REQUISITOS = [
-  'Windows 10 o superior (64 bits).',
-  'Conexión a internet durante la carga.',
-  'Permiso de escritura en la carpeta que elijas para el archivo de registros.',
-]
+const VERSION: Version = {
+  numero: 'Beta 1',
+  salida: false,
+  archivo: null,
+  peso: '18 MB aprox.',
+  cambios: [
+    'Carga automática de los alimentos al área de cada embarcación.',
+    'Bitácora de la carga con cada registro enviado.',
+    'Progreso por comanda, con la posibilidad de pausar y reanudar.',
+  ],
+}
 
 const PUNTOS = [
   {
@@ -96,8 +60,8 @@ const PUNTOS = [
   },
   {
     icono: MonitorDown,
-    titulo: 'Instalador .exe',
-    detalle: 'Un solo archivo, doble clic y listo. Sin dependencias.',
+    titulo: 'Aplicación de escritorio',
+    detalle: 'Corre en tu equipo con Windows 10 o superior.',
   },
   {
     icono: RefreshCw,
@@ -112,7 +76,8 @@ const PUNTOS = [
 ]
 
 export default function PreCargaBot() {
-  const recomendada = VERSIONES.find((v) => v.recomendada) ?? VERSIONES[0]
+  const disponible = VERSION.salida && VERSION.archivo !== null
+  const archivo = VERSION.archivo
 
   return (
     <div className="flex min-h-screen flex-col bg-[#070d1c]">
@@ -146,30 +111,42 @@ export default function PreCargaBot() {
             <h1 className="mt-6 text-4xl font-extrabold leading-[1.06] tracking-tight text-white sm:text-5xl">
               PreCarga Bot
               <span className="block bg-gradient-to-r from-[#7dd3fc] via-[#38bdf8] to-[#818cf8] bg-clip-text text-transparent">
-                descarga la última versión
+                carga los alimentos al área
               </span>
             </h1>
 
             <p className="mx-auto mt-5 max-w-xl text-lg text-slate-300">
-              Automatiza la carga de alimentos al área de tus barcos. Elige la
-              versión que quieras y corre el instalador.
+              Automatiza la carga de alimentos al área de tus barcos y deja de
+              capturarlos uno por uno.
             </p>
 
-            <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
-              <Button size="lg" className="gap-2 px-7" asChild>
-                <a href={recomendada.archivo} download>
-                  <Download className="h-4 w-4" />
-                  Descargar {recomendada.numero}
-                </a>
-              </Button>
-              <Button size="lg" variant="outline" className="px-7" asChild>
-                <a href="#versiones">Ver todas las versiones</a>
-              </Button>
-            </div>
+            {/* Aviso de "proximamente". Es lo unico que hay en lugar del
+                boton de descarga mientras no exista instalador publico. */}
+            {!disponible && (
+              <div className="mx-auto mt-9 max-w-md rounded-xl border border-amber-400/30 bg-amber-400/10 px-6 py-5">
+                <p className="flex items-center justify-center gap-2 text-sm font-semibold uppercase tracking-wider text-amber-300">
+                  <FlaskConical className="h-4 w-4" />
+                  Próximamente
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                  Estamos en <span className="font-semibold text-white">Beta 1</span>.
+                  El instalador todavía no está disponible para descarga.
+                </p>
+              </div>
+            )}
 
-            <p className="mt-4 text-sm text-slate-400">
-              Recomendada: {recomendada.numero} · {recomendada.peso} ·{' '}
-              {recomendada.fecha}
+            {disponible && archivo && (
+              <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
+                <Button size="lg" className="gap-2 px-7" asChild>
+                  <a href={archivo} download>
+                    Descargar {VERSION.numero}
+                  </a>
+                </Button>
+              </div>
+            )}
+
+            <p className="mt-5 text-sm text-slate-400">
+              Versión actual: {VERSION.numero} · {VERSION.peso}
             </p>
           </div>
 
@@ -184,7 +161,7 @@ export default function PreCargaBot() {
             <div className="overflow-hidden rounded-2xl border border-primary/40 shadow-[0_0_0_1px_rgba(0,120,212,0.22),0_30px_80px_-20px_rgba(0,120,212,0.6)]">
               <img
                 src="/precarga-bot.webp"
-                alt="PreCarga Bot procesando archivos: un robot analiza documentos de Excel y PDF mientras el dashboard muestra el avance de la carga al 68%."
+                alt="PreCarga Bot: un robot procesa archivos de Excel y PDF mientras el tablero muestra el avance al 68%. El progreso detalle que esta leyendo el archivo Excel, extrayendo los datos del PDF, validando la informacion y guardandola en la base de datos."
                 width={1536}
                 height={1024}
                 loading="lazy"
@@ -224,72 +201,52 @@ export default function PreCargaBot() {
           </div>
         </section>
 
-        {/* ---------------- versiones ---------------- */}
+        {/* ---------------- versión actual ---------------- */}
         <section
           id="versiones"
           className="scroll-mt-20 border-t border-white/10 bg-white/[0.02] px-6 py-16"
         >
-          <div className="mx-auto max-w-4xl">
+          <div className="mx-auto max-w-2xl">
             <h2 className="text-center text-2xl font-bold text-white sm:text-3xl">
-              Versiones recientes
+              Versión actual
             </h2>
-            <p className="mx-auto mt-2 max-w-lg text-center text-slate-400">
-              Si algo falla al actualizar, usa una versión anterior: cada una
-              queda disponible para descarga.
-            </p>
 
-            <div className="mt-10 grid gap-4">
-              {VERSIONES.map((v) => (
-                <Card
-                  key={v.numero}
-                  className={
-                    v.recomendada
-                      ? 'border-primary/50 bg-primary/[0.07]'
-                      : 'border-white/10 bg-white/[0.04]'
-                  }
-                >
-                  <CardContent className="p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-lg font-bold text-white">
-                            Versión {v.numero}
-                          </h3>
-                          {v.recomendada && (
-                            <span className="rounded-full bg-primary/20 px-2 py-0.5 text-[11px] font-semibold text-[#7dd3fc]">
-                              Recomendada
-                            </span>
-                          )}
-                        </div>
-                        <p className="mt-0.5 text-sm text-slate-400">
-                          {v.fecha} · {v.peso}
-                        </p>
-                      </div>
-
-                      <Button
-                        variant={v.recomendada ? 'accent' : 'outline'}
-                        className="gap-2"
-                        asChild
-                      >
-                        <a href={v.archivo} download>
-                          <Download className="h-4 w-4" />
-                          Descargar .exe
-                        </a>
-                      </Button>
+            <Card className="mt-10 border-primary/50 bg-primary/[0.07]">
+              <CardContent className="p-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-lg font-bold text-white">
+                        Versión {VERSION.numero}
+                      </h3>
+                      <span className="rounded-full border border-amber-400/40 bg-amber-400/15 px-2 py-0.5 text-[11px] font-semibold text-amber-300">
+                        En pruebas
+                      </span>
                     </div>
+                    <p className="mt-0.5 text-sm text-slate-400">
+                      {VERSION.peso}
+                    </p>
+                  </div>
 
-                    <ul className="mt-4 grid gap-1.5">
-                      {v.cambios.map((c) => (
-                        <li key={c} className="flex items-start gap-2 text-sm text-slate-400">
-                          <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#38bdf8]" />
-                          <span>{c}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                  {disponible && archivo && (
+                    <Button className="gap-2" asChild>
+                      <a href={archivo} download>
+                        Descargar
+                      </a>
+                    </Button>
+                  )}
+                </div>
+
+                <ul className="mt-5 grid gap-2">
+                  {VERSION.cambios.map((c) => (
+                    <li key={c} className="flex items-start gap-2 text-sm text-slate-300">
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#38bdf8]" />
+                      <span>{c}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
           </div>
         </section>
 
@@ -300,7 +257,11 @@ export default function PreCargaBot() {
               Requisitos
             </h2>
             <ul className="mx-auto mt-8 grid max-w-xl gap-3">
-              {REQUISITOS.map((r) => (
+              {[
+                'Windows 10 o superior (64 bits).',
+                'Conexión a internet durante la carga.',
+                'Permiso de escritura en la carpeta que elijas para el archivo de registros.',
+              ].map((r) => (
                 <li key={r} className="flex items-start gap-3 text-slate-300">
                   <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#38bdf8]" />
                   <span>{r}</span>
@@ -329,7 +290,7 @@ export default function PreCargaBot() {
       </main>
 
       <footer className="border-t border-white/10 px-6 py-6 text-center text-sm text-slate-500">
-        © 2026 PreCarga · PreCarga Bot v{recomendada.numero} · Desarrollado por{' '}
+        © 2026 PreCarga · PreCarga Bot {VERSION.numero} · Desarrollado por{' '}
         <span className="text-[#7dd3fc]">Angel Valenzuela</span>
       </footer>
     </div>

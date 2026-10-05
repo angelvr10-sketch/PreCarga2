@@ -173,7 +173,7 @@ const productos: Producto[] = [
     cierre: 'Más que un formulario, es un bot que trabaja por ti.',
     icono: Bot,
     ctas: [
-      { etiqueta: 'Descargar para Windows', to: '/precarga-bot' },
+      { etiqueta: 'Conocer PreCarga Bot', to: '/precarga-bot' },
       { etiqueta: 'Saber más', to: '/precarga-bot#versiones' },
     ],
   },

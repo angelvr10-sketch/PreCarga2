@@ -27,3 +27,10 @@ data/
 # Credenciales locales
 .env.*
 !.env.example
+
+# Imagenes de trabajo en la raiz del proyecto: son material de origen y la app
+# no las sirve. Las copias optimizadas que si se usan viven en
+# frontend/public/. Sin esta regla aparecen como ?? en cada git status.
+/bot*.jpg
+/robot-pro.png
+/precarga-bot-comandas.svg

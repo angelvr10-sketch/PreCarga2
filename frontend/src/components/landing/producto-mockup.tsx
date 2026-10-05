@@ -452,152 +452,32 @@ function MockPrecarga() {
   )
 }
 
-/* ---------------- 2. PreCarga Bot: el bot cargando en la web ----------------
+/* ---------------- 2. PreCarga Bot: escena de la app ----------------
  *
- * PreCarga Bot es una app de escritorio para Windows: lee los alimentos y
- * los sube solo al area. El mockup muestra justamente eso, la pagina web
- * destino rellenandose sola por detras y la ventana del bot encima con el
- * avance. Mostrar el resultado (la web con datos) y no solo el bot, porque
- * la promesa del producto es "dejo de capturar a mano".
+ * Ilustracion de la aplicacion: el robot leyendo las comandas de desayuno,
+ * comida y cena mientras la pantalla de Comandas procesa y asigna raciones
+ * a las plataformas.
+ *
+ * A diferencia del resto, aqui los textos de la imagen SI son legibles y
+ * reales (Comanda Desayuno #0412, Raciones 1,436, Cargando comandas 68%),
+ * asi que la imagen hace de prueba de que la app existe y funciona.
+ *
+ * El archivo es /public/precarga-bot-comandas.webp (WebP, ~78 KB) a partir
+ * del PNG original de 683 KB. No lleva marco de navegador encima porque la
+ * ilustracion ya trae su propia ventana; un chrome seria ventana sobre
+ * ventana.
  * ------------------------------------------------------------------ */
 
 function MockBot() {
-  // Filas que ya cargo el bot. Las ultimas van con el borde verde y la
-  // marca "recien agregado": es lo que hace visible que la carga avanza.
-  const filas: [string, string, string, number][] = [
-    ['CM-2401-018', '05/10/2026', 'GANGWAY', 1],
-    ['CM-2401-017', '05/10/2026', 'AÉREOS', 1],
-    ['CM-2401-016', '05/10/2026', 'GANGWAY', 1],
-    ['CM-2401-015', '05/10/2026', 'POL-A', 1],
-    ['CM-2401-014', '05/10/2026', 'ABKATUN-N1', 1],
-  ]
-
   return (
-    <Marco etiqueta="PreCarga Bot, aplicación de escritorio para Windows, automatizando la carga de alimentos al área: un robot procesa la información mientras la página web de destino se llena sola, y la ventana del bot muestra el avance.">
-      {/* ---- la pagina web de destino, al fondo ---- */}
-      <rect x="0" y="0" width="700" height="440" fill="#101014" />
-
-      {/* barra del navegador */}
-      <rect x="0" y="0" width="700" height="26" fill={C.panelAlto} />
-      <circle cx="16" cy="11" r="2.6" fill="#ff5f57" />
-      <circle cx="26" cy="11" r="2.6" fill="#febc2e" />
-      <circle cx="36" cy="11" r="2.6" fill="#28c840" />
-      <rect x="50" y="6" width="420" height="11" rx="5.5" fill={C.barra} />
-      <circle cx="58" cy="11.5" r="2" fill="none" stroke={C.textoFaint} strokeWidth={0.7} />
-      <T x={66} y={14} n="comandas-opq6.onrender.com/area/carga" size={5.2} fill={C.textoFaint} />
-
-      {/* encabezado de la web */}
-      <T x={22} y={48} n="Carga de alimentos al área" size={10} fill="#ffffff" weight={700} />
-      <T x={22} y={60} n="Reforma PEMEX · 05/10/2026" size={5.6} fill={C.textoFaint} />
-      <rect x={250} y={41} width={78} height={15} rx={4} fill={C.primario} stroke={C.primario} />
-      <T x={289} y={51} n="Guardar cambios" size={5.4} fill="#ffffff" weight={600} anchor="middle" />
-
-      {/* tabla de la web */}
-      <rect x={16} y={72} width={668} height={20} rx={5} fill={C.panel} stroke={C.bordeSuave} />
-      {[
-        ['Comanda', 30],
-        ['Fecha', 150],
-        ['Destino', 240],
-        ['Alimento', 340],
-        ['Estado', 620],
-      ].map(([n, x]) => (
-        <T key={String(n)} x={Number(x)} y={85} n={String(n)} size={5.6} fill={C.textoTenue} weight={600} />
-      ))}
-
-      {filas.map(([folio, fecha, destino, recien], i) => (
-        <g key={folio}>
-          <rect
-            x={16}
-            y={98 + i * 24}
-            width={668}
-            height={20}
-            rx={5}
-            fill={C.panel}
-            stroke={recien ? '#1a994c' : C.bordeSuave}
-            strokeWidth={recien ? 0.8 : 0.4}
-            opacity={recien ? 1 : 0.6}
-          />
-          <T x={30} y={111 + i * 24} n={folio} size={5.6} fill="#ffffff" o={0.8} weight={600} />
-          <T x={150} y={111 + i * 24} n={fecha} size={5.4} fill={C.textoFaint} />
-          <T x={240} y={111 + i * 24} n={destino} size={5.4} fill={C.cielo} />
-          <T x={340} y={111 + i * 24} n={i % 2 === 0 ? 'Menú 1 · 148 pax' : 'Viandas · 62 pax'} size={5.4} fill={C.textoTenue} />
-          {recien ? (
-            <g>
-              <rect x={620} y={103 + i * 24} width={52} height={10} rx={5} fill="#1a994c26" />
-              <circle cx={628} cy={108 + i * 24} r={1.8} fill="#1a994c" />
-              <T x={635} y={110.5 + i * 24} n="Cargado" size={5} fill="#1a994c" weight={600} />
-            </g>
-          ) : (
-            <T x={620} y={111 + i * 24} n="Pendiente" size={5} fill={C.textoFaint} />
-          )}
-        </g>
-      ))}
-
-      {/* "hay mas en cola": deja claro que la tabla se sigue llenando y que
-          las 5 filas de arriba no son el total. */}
-      <rect x={16} y={222} width={668} height={18} rx={5} fill={C.panel} stroke={C.bordeSuave} opacity={0.5} />
-      <T x={30} y={234} n="+ 143 registros en cola…" size={5.6} fill={C.textoFaint} />
-
-      {/* ---- el bot ----
-          El robot va como <image> y no dibujado: el original es un render 3D
-          con volumen, cristal y luz, y ningun vector se le acerca. El recorte
-          trae ya una mascara radial aplicada (public/bot-precarga.webp) para
-          fundirse con este fondo oscuro sin costura visible. */}
-      <image
-        href="/bot-precarga.webp"
-        x="36"
-        y="214"
-        width="195"
-        height="212"
-        preserveAspectRatio="xMidYMid meet"
-      />
-
-      {/* ---- la ventana del bot, flotando encima ---- */}
-      <rect x={304} y={204} width={384} height={196} rx={10} fill="#000000" opacity={0.45} />
-      <rect x={300} y={200} width={384} height={196} rx={10} fill={C.panel} stroke="#0078d4" strokeWidth={1.2} />
-
-      {/* barra de titulo de la app de escritorio */}
-      <rect x={300} y={200} width={384} height={22} rx={10} fill={C.panelAlto} />
-      <rect x={300} y={212} width={384} height={10} fill={C.panelAlto} />
-      <line x1="300" y1="222" x2="684" y2="222" stroke={C.bordeSuave} />
-      <image
-        href="/logos/precarga-icono.svg"
-        x="309"
-        y="207.8"
-        width="13"
-        height="9.4"
-        preserveAspectRatio="xMidYMid meet"
-      />
-      <T x={327} y={215} n="PreCarga Bot" size={6.4} fill="#ffffff" weight={600} />
-      <T x={380} y={215} n="v1.4.2" size={5.4} fill={C.textoFaint} />
-
-      <T x={314} y={240} n="Cargando alimentos al área" size={8} fill="#ffffff" weight={700} />
-      <T x={314} y={253} n="Destino: comandas-opq6.onrender.com" size={5.6} fill={C.textoFaint} />
-
-      {/* progreso */}
-      <rect x={314} y={264} width={356} height={9} rx={4.5} fill="#ffffff" opacity={0.08} />
-      <rect x={314} y={264} width={356 * 0.57} height={9} rx={4.5} fill={C.primario} />
-      <T x={314} y={287} n="148 de 261 registros" size={6} fill={C.texto} weight={600} />
-      <T x={670} y={287} n="57%" size={6} fill={C.primario} weight={700} anchor="end" />
-
-      {/* bitacora */}
-      <rect x={314} y={298} width={356} height={54} rx={6} fill={C.barra} stroke={C.bordeSuave} />
-      {[
-        ['✓', 'CM-2401-018 cargado', '#1a994c'],
-        ['✓', 'CM-2401-017 cargado', '#1a994c'],
-        ['…', 'CM-2401-016 en curso', C.cielo],
-      ].map(([marca, msg, color], i) => (
-        <g key={String(msg)}>
-          <T x={324} y={314 + i * 13} n={marca} size={5.6} fill={color} weight={700} />
-          <T x={336} y={314 + i * 13} n={String(msg)} size={5.4} fill={C.textoTenue} />
-        </g>
-      ))}
-
-      <rect x={314} y={362} width={104} height={18} rx={4} fill={C.barra} stroke={C.bordeSuave} />
-      <T x={366} y={374} n="Pausar" size={5.8} fill={C.textoTenue} weight={600} anchor="middle" />
-      <rect x={426} y={362} width={110} height={18} rx={4} fill={C.barra} stroke={C.bordeSuave} />
-      <T x={481} y={374} n="Cancelar carga" size={5.8} fill={C.textoTenue} weight={600} anchor="middle" />
-    </Marco>
+    <img
+      src="/precarga-bot-comandas.webp"
+      alt="PreCarga Bot: un robot lee las comandas de desayuno, comida y cena mientras la pantalla de Comandas procesa y asigna raciones a las plataformas. Se ven 128 comandas hoy, 1,436 raciones en 3 turnos, 12 plataformas en operacion, 7 pendientes por validar y un avance del 68%."
+      width={1536}
+      height={1024}
+      decoding="async"
+      className="block h-auto w-full"
+    />
   )
 }
 
