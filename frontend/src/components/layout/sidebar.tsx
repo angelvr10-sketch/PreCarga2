@@ -74,7 +74,7 @@ export function Sidebar() {
                 PreCarga
               </span>
               <span className="fluent-caption text-sidebar-foreground/55 whitespace-nowrap">
-                Maritime operations
+                Operaciones Marinas
               </span>
             </div>
           )}

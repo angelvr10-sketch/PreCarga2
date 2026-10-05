@@ -158,19 +158,19 @@ export default function Landing() {
 
             <Badge variant="accent" className="mt-8 gap-1.5 px-3 py-1 text-[12.5px]">
               <Zap className="h-3.5 w-3.5" />
-              Sistema de Gestión de Activos
+              Sistema de Gestión de Solicitudes de Hospedaje
             </Badge>
 
             <h1 className="mt-6 max-w-4xl text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl">
-              Gestiona tus activos
+              Gestiona tus Solicitudes
               <span className="block bg-gradient-to-r from-white via-white to-[hsl(206_100%_72%)] bg-clip-text text-transparent">
                 de forma inteligente
               </span>
             </h1>
 
             <p className="mx-auto mt-5 max-w-2xl text-lg text-muted-foreground sm:text-xl">
-              Sistema web para procesamiento de documentos de alta y baja de activos.
-              <br className="hidden sm:block" /> Optimizado para Logística Marina PEMEX.
+              Sistema web para procesamiento de documentos PDF de alta y baja de personal.
+              <br className="hidden sm:block" /> Optimizado para Logística Marina.
             </p>
 
             <div className="mt-9 flex flex-wrap items-center justify-center gap-4">
