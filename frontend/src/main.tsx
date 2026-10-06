@@ -49,4 +49,25 @@ function App() {
   )
 }
 
+/* ────────────────────────────────────────────────────────────
+   PWA: registro del service worker.
+
+   Va despues de render() a proposito. El registro descarga el sw.js y es
+   trabajo de red: si se espera a que termine, la app tarda mas en pintar en
+   la primera carga, que es justo cuando el usuario esta mirando la pantalla
+   de carga. Registrando en paralelo, la instalacion ocurre mientras la app ya
+   esta siendo usable.
+
+   Solo se registra en produccion. En desarrollo Vite sirve los modulos con su
+   propio HMR y un service worker cacheando /src/ sirve de estorbo.
+   ──────────────────────────────────────────────────────────── */
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Silencioso a proposito: si falla (http, extension, navegador sin SW),
+      // la app sigue funcionando igual. Solo se pierde la instalabilidad.
+    })
+  })
+}
+
 createRoot(document.getElementById('root')!).render(<App />)

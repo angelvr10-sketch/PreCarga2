@@ -80,6 +80,39 @@ async def cache_static(request: Request, call_next):
 if DIST_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
 
+# ── PWA: manifest y service worker ────────────────────────────
+# Rutas explicitas y no confianza en el catch-all de abajo. El manifest
+# tiene que servirse como application/manifest+json: si cae en el
+# catch-all, Starlette lo devuelve como index.html y el navegador rechaza
+# la instalacion sin decir por que. El service worker, en cambio, tiene que
+# contestarse desde la raiz para controlar todo el scope.
+@app.get("/manifest.webmanifest", include_in_schema=False)
+async def manifest():
+    archivo = DIST_DIR / "manifest.webmanifest"
+    if not archivo.is_file():
+        return JSONResponse({"detail": "manifest no encontrado"}, status_code=404)
+    return FileResponse(
+        archivo,
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker():
+    archivo = DIST_DIR / "sw.js"
+    if not archivo.is_file():
+        return JSONResponse({"detail": "sw.js no encontrado"}, status_code=404)
+    return FileResponse(
+        archivo,
+        media_type="text/javascript",
+        # El service worker nunca se cachea a nivel HTTP: si el navegador
+        # guarda una version vieja, nunca vuelve a preguntar por la nueva y
+        # la app se queda clavada en esa version.
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
+
+
 # ── Routers ───────────────────────────────────────────────────
 # Deben registrarse ANTES del catch-all de la SPA: en FastAPI gana la
 # primera coincidencia, asi que las rutas explicitas ganan siempre.
