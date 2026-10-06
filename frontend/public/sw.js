@@ -21,7 +21,10 @@
    codigo antes que una experiencia offline incompleta.
    ============================================================ */
 
-const VERSION = 'v2';
+// Subir esto en CUALQUIER cambio de sw.js. Es lo unico que decide que caches
+// se descartan en activate: si el archivo del worker cambia pero VERSION no,
+// las caches viejas sobreviven con contenido que ya no corresponde.
+const VERSION = 'v3';
 const CACHE_ACTIVOS = `precarga-${VERSION}`;
 const CACHE_INMUTABLES = `precarga-inmutables-${VERSION}`;
 
@@ -43,9 +46,19 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_ACTIVOS)
       // addAll es atomico: si un recurso falla, no se cachea ninguno. Con
       // Promise.allSettled fallaria uno solo y la app abriria sin estetica.
-      .then((cache) => cache.addAll(PRECACHE))
-      .then(() => self.skipWaiting()),
+      .then((cache) => cache.addAll(PRECACHE)),
   );
+  // DELIBERADAMENTE no se llama a skipWaiting() aqui.
+  //
+  // Sin ese llamada, el service worker nuevo queda en estado 'waiting' y el
+  // usuario recibe el aviso de version nueva, con su boton para recargar.
+  // Con skipWaiting() el control cambia solo, y el aviso nunca llega a verse:
+  // lo unico que se lograria es que la pestana quedara con una version vieja
+  // del HTML cargada en memoria mientras el cache ya tiene los assets
+  // nuevos, que es peor que no avisar.
+  //
+  // El salto real ocurre por mensaje, cuando el usuario acepta:
+  // ver el listener de 'message' mas abajo.
 });
 
 self.addEventListener('activate', (event) => {
@@ -56,6 +69,10 @@ self.addEventListener('activate', (event) => {
           .filter((k) => k !== CACHE_ACTIVOS && k !== CACHE_INMUTABLES)
           .map((k) => caches.delete(k)),
       ))
+      // claim solo afecta a la primera instalacion: si no hay un SW
+      // anterior, este es el unico que controla y hay que adoptarlo al
+      // instante. En una actualizacion ya hay un controlador, asi que
+      // claim no hace nada y el cambio llega por el mensaje del usuario.
       .then(() => self.clients.claim()),
   );
 });
@@ -127,8 +144,13 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// Permite que la app pregunte si hay una version nueva y fuerce el refresco.
-// Se usa desde el frontend; ver use-actualizacion.ts.
+// Salto de version bajo demanda.
+//
+// El frontend (hooks/use-actualizacion.ts) muestra el aviso de version nueva
+// y, si el usuario pulsa Recargar, manda este mensaje. Ahi si se llama a
+// skipWaiting: activate se encarga de limpiar los caches viejos y
+// clients.claim() le pasa el control, lo que dispara 'controllerchange' en la
+// pagina y ahi se hace el location.reload().
 self.addEventListener('message', (event) => {
   if (event.data === 'skip-waiting') self.skipWaiting();
 });

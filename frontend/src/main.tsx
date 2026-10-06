@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 import { AuthProvider, useAuth } from '@/hooks/use-auth'
 import { SidebarProvider } from '@/hooks/use-sidebar'
+import { useActualizacion } from '@/hooks/use-actualizacion'
+import { Toaster } from '@/components/toaster'
 import { router } from '@/router'
 import './index.css'
 
@@ -36,12 +38,18 @@ function InnerApp() {
 }
 
 function App() {
+  // Avisa cuando hay un service worker nuevo esperando. Se monta aqui y no
+  // dentro de InnerApp para que el aviso tambien aparezca en la landing y en
+  // /login: es informacion de la app, no de una pantalla en concreto.
+  useActualizacion()
+
   return (
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <SidebarProvider>
             <InnerApp />
+            <Toaster />
           </SidebarProvider>
         </AuthProvider>
       </QueryClientProvider>
