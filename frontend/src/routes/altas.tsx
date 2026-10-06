@@ -22,10 +22,10 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { solicitudesApi } from '@/lib/solicitudes'
+import { solicitudesApi, descargarSolicitud, mensajeDescargaError } from '@/lib/solicitudes'
 import { formatFecha } from '@/lib/utils'
 import type { Solicitud } from '@/types'
-import { Search, Download, FileText, Loader2, CheckCircle2, XCircle, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, Download, FileText, Loader2, CheckCircle2, XCircle, ChevronLeft, ChevronRight, AlertCircle, X } from 'lucide-react'
 
 function getSearchInicial(): string {
   if (typeof window === 'undefined') return ''
@@ -40,6 +40,15 @@ export default function Altas() {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'created_at', desc: true }])
   const [rowSelection, setRowSelection] = useState({})
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [avisoDescarga, setAvisoDescarga] = useState<string | null>(null)
+
+  // Descarga por fetch: no abre pestana ni saca al usuario de la tabla.
+  // El <a target="_blank"> que se usaba antes dejaba una pestana vacia y,
+  // si no habia permiso, guardaba el HTML de /checkout como .xlsx.
+  const descargarFolio = async (folio: string) => {
+    const r = await descargarSolicitud(`${folio}.xlsx`)
+    if (!r.ok) setAvisoDescarga(mensajeDescargaError(r.motivo))
+  }
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -72,14 +81,10 @@ export default function Altas() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['solicitudes'] })
       setRowSelection({})
-      const url = data.download_url ?? (data.archivo ? `/api/descargar/${data.archivo}` : '')
-      if (url) {
-        const a = document.createElement('a')
-        a.href = url
-        a.download = ''
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
+      if (data.archivo) {
+        void descargarSolicitud(data.archivo).then((r) => {
+          if (!r.ok) setAvisoDescarga(mensajeDescargaError(r.motivo))
+        })
       }
     },
   })
@@ -180,10 +185,15 @@ export default function Altas() {
         cell: ({ row }) => {
           const folio = row.getValue('folio') as string
           return (
-            <Button variant="outline" size="sm" className="gap-2" asChild>
-              <a href={`/api/descargar/${folio}.xlsx`} target="_blank" rel="noreferrer">
-                <Download className="h-4 w-4" />
-              </a>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              title={`Descargar ${folio}.xlsx`}
+              aria-label={`Descargar ${folio}`}
+              onClick={() => void descargarFolio(folio)}
+            >
+              <Download className="h-4 w-4" />
             </Button>
           )
         },
@@ -209,6 +219,20 @@ export default function Altas() {
 
   return (
     <div className="flex flex-col space-y-6">
+      {avisoDescarga && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="flex-1">{avisoDescarga}</span>
+          <button
+            type="button"
+            onClick={() => setAvisoDescarga(null)}
+            className="shrink-0 opacity-70 hover:opacity-100"
+            aria-label="Cerrar aviso"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Altas</h1>
         {selectedIds.length > 0 && (

@@ -1,10 +1,21 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { adminApi } from '@/lib/admin'
-import { Download, FileText, AlertCircle } from 'lucide-react'
+import { Download, FileText, AlertCircle, X } from 'lucide-react'
+import { descargarLog, mensajeDescargaError } from '@/lib/solicitudes'
 
 export default function Logs() {
+  const [aviso, setAviso] = useState<string | null>(null)
+
+  // window.open('/api/descargar-log', '_blank') dejaba una pestana vacia y
+  // navegaba la actual si la descarga fallaba. Con fetch no hay pestana.
+  const bajarLog = async () => {
+    const r = await descargarLog()
+    if (!r.ok) setAviso(mensajeDescargaError(r.motivo))
+  }
+
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['logs'],
     queryFn: () => adminApi.getLogs(),
@@ -13,9 +24,19 @@ export default function Logs() {
   if (isError) {
     return (
       <div className="space-y-6">
+        {aviso && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="flex-1">{aviso}</span>
+            <button type="button" onClick={() => setAviso(null)}
+                    className="shrink-0 opacity-70 hover:opacity-100" aria-label="Cerrar aviso">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold tracking-tight">Logs del Sistema</h1>
-          <Button onClick={() => window.open('/api/descargar-log', '_blank')}>
+          <Button onClick={() => void bajarLog()}>
             <Download className="mr-2 h-4 w-4" />
             Descargar Log
           </Button>
@@ -33,9 +54,19 @@ export default function Logs() {
 
   return (
     <div className="space-y-6">
+      {aviso && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="flex-1">{aviso}</span>
+          <button type="button" onClick={() => setAviso(null)}
+                  className="shrink-0 opacity-70 hover:opacity-100" aria-label="Cerrar aviso">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Logs del Sistema</h1>
-        <Button onClick={() => window.open('/api/descargar-log', '_blank')}>
+        <Button onClick={() => void bajarLog()}>
           <Download className="mr-2 h-4 w-4" />
           Descargar Log
         </Button>

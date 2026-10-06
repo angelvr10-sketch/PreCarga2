@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { solicitudesApi } from '@/lib/solicitudes'
+import { solicitudesApi, descargarSolicitud, mensajeDescargaError } from '@/lib/solicitudes'
 import { bajasApi } from '@/lib/bajas'
 import type { Solicitud } from '@/types'
 import { Upload, Database, Search, Download, Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react'
@@ -366,11 +366,19 @@ export default function Bajas() {
                   </div>
                 </div>
                 {result.archivo && (
-                  <Button variant="outline" className="w-full gap-2" asChild>
-                    <a href={`/api/descargar/${result.archivo}`}>
-                      <Download className="h-4 w-4" />
-                      Descargar resultados
-                    </a>
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2"
+                    onClick={() => {
+                      const archivo = result.archivo
+                      if (!archivo) return
+                      void descargarSolicitud(archivo).then((r) => {
+                        if (!r.ok) setAviso(mensajeDescargaError(r.motivo))
+                      })
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                    Descargar resultados
                   </Button>
                 )}
               </CardContent>

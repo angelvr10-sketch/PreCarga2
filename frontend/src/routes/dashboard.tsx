@@ -17,10 +17,10 @@ import { FullscreenToggle } from '@/components/ui/fullscreen-toggle'
 import { useFullscreen } from '@/hooks/use-fullscreen'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
-import { solicitudesApi } from '@/lib/solicitudes'
+import { solicitudesApi, descargarSolicitud, mensajeDescargaError } from '@/lib/solicitudes'
 import type { DashboardStats } from '@/types'
 import { cn, formatFecha } from '@/lib/utils'
-import { FileText, ArrowRightLeft, UserPlus, UserMinus, ArrowRight, Download, Building2, AlertCircle, Check } from 'lucide-react'
+import { FileText, ArrowRightLeft, UserPlus, UserMinus, ArrowRight, Download, Building2, AlertCircle, Check, X } from 'lucide-react'
 import type { ProgramacionArea } from '@/types'
 
 type Periodo = 14 | 30 | 180 | 365
@@ -78,6 +78,15 @@ type AreaRow = { label: string } & Record<AreaKey, number>
 
 export default function Dashboard() {
   const [periodo, setPeriodo] = useState<Periodo>(30)
+  const [avisoDescarga, setAvisoDescarga] = useState<string | null>(null)
+
+  // Igual que en /altas: por fetch, sin abrir pestana ni navegar. El
+  // <a target="_blank"> anterior dejaba una pestana vacia y, sin permiso,
+  // guardaba el HTML de /checkout con nombre .xlsx.
+  const descargarFolio = async (folio: string) => {
+    const r = await descargarSolicitud(`${folio}.xlsx`)
+    if (!r.ok) setAvisoDescarga(mensajeDescargaError(r.motivo))
+  }
 
   const periodoLabel = PERIODOS.find((p) => p.value === periodo)?.plural ?? 'últimos 30 días'
 
@@ -225,6 +234,20 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {avisoDescarga && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="flex-1">{avisoDescarga}</span>
+          <button
+            type="button"
+            onClick={() => setAvisoDescarga(null)}
+            className="shrink-0 opacity-70 hover:opacity-100"
+            aria-label="Cerrar aviso"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
       </div>
@@ -531,10 +554,15 @@ export default function Dashboard() {
                     <TableCell className="text-right font-semibold text-emerald-400">{s.personal_count ?? 0}</TableCell>
                     <TableCell className="text-right font-semibold text-destructive">{s.bajas_count ?? 0}</TableCell>
                     <TableCell>
-                      <Button variant="outline" size="sm" className="gap-2" asChild>
-                        <a href={`/api/descargar/${s.folio}.xlsx`} target="_blank" rel="noreferrer">
-                          <Download className="h-4 w-4" />
-                        </a>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        title={`Descargar ${s.folio}.xlsx`}
+                        aria-label={`Descargar ${s.folio}`}
+                        onClick={() => void descargarFolio(s.folio)}
+                      >
+                        <Download className="h-4 w-4" />
                       </Button>
                     </TableCell>
                   </TableRow>
