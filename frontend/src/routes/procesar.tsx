@@ -2,8 +2,8 @@ import { useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { solicitudesApi } from '@/lib/solicitudes'
-import { FileText, Upload, CheckCircle2, XCircle, Loader2, X, FileWarning } from 'lucide-react'
+import { solicitudesApi, descargarSolicitud, mensajeDescargaError } from '@/lib/solicitudes'
+import { FileText, CheckCircle2, XCircle, Loader2, X, FileWarning } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Estado = 'pendiente' | 'procesando' | 'ok' | 'error'
@@ -25,6 +25,18 @@ export default function Procesar() {
   const [ignorados, setIgnorados] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const nextId = useRef(1)
+  // Cola de archivos por procesar y bandera del bucle en marcha.
+  //
+  // Se procesa en serie porque el parseo de PDF es CPU-bound y el backend
+  // abre peticiones a Supabase por cada persona: lanzarlos en paralelo solo
+  // competingiria por la CPU y por el pool de conexiones.
+  //
+  // La cola tambien resuelve el autoarranque: si el usuario suelta mas
+  // archivos mientras corre el proceso, se encolan y los toma el mismo bucle.
+  // Sin esto, cada archivo nuevo abriria su propio bucle y el "uno por uno"
+  // dejaria de ser cierto justo cuando hay mas carga.
+  const colaRef = useRef<Item[]>([])
+  const corriendoRef = useRef(false)
   // Cambia la key del input para poder volver a elegir el mismo archivo.
   const [resetKey, setResetKey] = useState(0)
 
@@ -38,17 +50,22 @@ export default function Procesar() {
     // .xlsx al arrastrar, hay que decirlo.
     setIgnorados(otros.map((f) => f.name))
 
-    setItems((prev) => {
-      const yaPresentes = new Set(prev.map((i) => `${i.file.name}-${i.file.size}`))
-      const nuevos: Item[] = []
-      for (const f of pdfs) {
-        const clave = `${f.name}-${f.size}`
-        if (yaPresentes.has(clave)) continue // no duplicar el mismo archivo
-        yaPresentes.add(clave)
-        nuevos.push({ id: nextId.current++, file: f, estado: 'pendiente' })
-      }
-      return [...prev, ...nuevos]
-    })
+    // Se calcula la lista de nuevos aqui y no dentro del updater de
+    // setItems: hace falta encolar esos mismos archivos para el autoarranque,
+    // y un updater de React corre dos veces en StrictMode.
+    const yaPresentes = new Set(items.map((i) => `${i.file.name}-${i.file.size}`))
+    const nuevos: Item[] = []
+    for (const f of pdfs) {
+      const clave = `${f.name}-${f.size}`
+      if (yaPresentes.has(clave)) continue // no duplicar el mismo archivo
+      yaPresentes.add(clave)
+      nuevos.push({ id: nextId.current++, file: f, estado: 'pendiente' })
+    }
+
+    if (nuevos.length === 0) return
+    setItems((prev) => [...prev, ...nuevos])
+    // Autoarranque: en vez de esperar al boton, encola y arranca el bucle.
+    encolar(nuevos)
   }
 
   const quitar = (id: number) => setItems((prev) => prev.filter((i) => i.id !== id))
@@ -56,52 +73,76 @@ export default function Procesar() {
   const limpiar = () => {
     setItems([])
     setIgnorados([])
+    colaRef.current = []
     setResetKey((k) => k + 1)
   }
 
-  const procesar = async () => {
+  /** Mete archivos en la cola y arranca el bucle si no habia ninguno. */
+  const encolar = (nuevos: Item[]) => {
+    colaRef.current = [...colaRef.current, ...nuevos]
+    void vaciarCola()
+  }
+
+  /**
+   * Bucle unico que consume la cola de a uno.
+   *
+   * Devuelve de inmediato si ya hay otro bucle corriendo: los archivos que
+   * se solen durante el proceso quedan en la cola y los toma esta misma
+   * vuelta, en vez de abrir una descarga paralela.
+   */
+  const vaciarCola = async () => {
+    if (corriendoRef.current) return
+    corriendoRef.current = true
     setProcesando(true)
-    // Uno por uno y en serie a proposito: el parseo de PDF es CPU-bound y el
-    // backend abre peticiones a Supabase por cada persona. Lanzarlos en
-    // paralelo solo competingiria por la CPU y por el pool de conexiones.
-    const cola = items.filter((i) => i.estado === 'pendiente')
 
-    for (const item of cola) {
-      const actualizar = (parche: Partial<Item>) =>
-        setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, ...parche } : i)))
+    try {
+      while (colaRef.current.length > 0) {
+        const item = colaRef.current.shift()!
+        const actualizar = (parche: Partial<Item>) =>
+          setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, ...parche } : i)))
 
-      actualizar({ estado: 'procesando' })
-      try {
-        const r = await solicitudesApi.procesarPdf(item.file)
-        // Ojo: un fallo del backend llega como HTTP 200 con {ok:false}; no es
-        // una excepcion, asi que hay que mirar el campo ok.
-        if (!r.ok) {
-          actualizar({ estado: 'error', mensaje: r.mensaje })
-          continue
-        }
-
-        // Descarga automatica del xlsx recien generado.
-        if (r.archivo) {
-          try {
-            await solicitudesApi.descargarSolicitud(r.archivo)
-            actualizar({ estado: 'ok', mensaje: `${r.mensaje} · descargado` })
-          } catch (e) {
-            // El PDF SI se proceso y guardo bien: solo fallo la descarga, asi
-            // que el estado sigue siendo 'ok' con el aviso.
-            const motivo = e instanceof Error ? e.message : 'Error al descargar'
-            actualizar({ estado: 'ok', mensaje: `${r.mensaje} · sin descargar: ${motivo}` })
+        actualizar({ estado: 'procesando' })
+        try {
+          const r = await solicitudesApi.procesarPdf(item.file)
+          // Ojo: un fallo del backend llega como HTTP 200 con {ok:false}; no es
+          // una excepcion, asi que hay que mirar el campo ok.
+          if (!r.ok) {
+            actualizar({ estado: 'error', mensaje: r.mensaje })
+            continue
           }
-        } else {
-          actualizar({ estado: 'ok', mensaje: r.mensaje })
+
+          // Descarga automatica del xlsx recien generado.
+          if (r.archivo) {
+            try {
+              const d = await descargarSolicitud(r.archivo)
+              if (d.ok) {
+                actualizar({ estado: 'ok', mensaje: `${r.mensaje} · descargado` })
+              } else {
+                // El PDF SI se proceso y guardo bien: solo fallo la descarga, asi
+                // que el estado sigue siendo 'ok' con el aviso.
+                actualizar({
+                  estado: 'ok',
+                  mensaje: `${r.mensaje} · sin descargar: ${mensajeDescargaError(d.motivo).toLowerCase()}`,
+                })
+              }
+            } catch (e) {
+              const motivo = e instanceof Error ? e.message : 'Error al descargar'
+              actualizar({ estado: 'ok', mensaje: `${r.mensaje} · sin descargar: ${motivo}` })
+            }
+          } else {
+            actualizar({ estado: 'ok', mensaje: r.mensaje })
+          }
+        } catch (e) {
+          actualizar({
+            estado: 'error',
+            mensaje: e instanceof Error ? e.message : 'Error al procesar el archivo',
+          })
         }
-      } catch (e) {
-        actualizar({
-          estado: 'error',
-          mensaje: e instanceof Error ? e.message : 'Error al procesar el archivo',
-        })
       }
+    } finally {
+      corriendoRef.current = false
+      setProcesando(false)
     }
-    setProcesando(false)
   }
 
   const pendientes = items.filter((i) => i.estado === 'pendiente').length
@@ -118,7 +159,7 @@ export default function Procesar() {
         <CardHeader>
           <CardTitle>Subir archivos PDF</CardTitle>
           <CardDescription>
-            Selecciona o arrastra uno o varios PDF para procesar los datos de personal
+            El procesamiento arranca solo al elegir o soltar los archivos
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -147,7 +188,9 @@ export default function Procesar() {
             <p className="mb-1 text-sm font-medium">
               Arrastra uno o varios archivos PDF aquí o haz clic para seleccionar
             </p>
-            <p className="text-xs text-muted-foreground">Solo archivos PDF</p>
+            <p className="text-xs text-muted-foreground">
+              Solo archivos PDF · se procesan automáticamente
+            </p>
           </div>
 
           {ignorados.length > 0 && (
@@ -227,27 +270,16 @@ export default function Procesar() {
             </ul>
           )}
 
-          <div className="flex gap-2">
-            <Button
-              className="flex-1 gap-2"
-              disabled={pendientes === 0 || procesando}
-              onClick={procesar}
-            >
-              {procesando ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="h-4 w-4" />
-              )}
-              {procesando
-                ? 'Procesando...'
-                : `Procesar ${pendientes} ${pendientes === 1 ? 'PDF' : 'PDFs'}`}
-            </Button>
-            {items.length > 0 && !procesando && (
-              <Button variant="outline" onClick={limpiar}>
-                Limpiar
+          {/* Ya no hay boton de "Procesar": al soltar o elegir los archivos
+              arrancan solos. Queda solo Limpiar, y durante el proceso se
+              muestra el avance en su lugar para no dejar un boton muerto. */}
+          {items.length > 0 && !procesando && (
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={limpiar}>
+                Limpiar lista
               </Button>
-            )}
-          </div>
+            </div>
+          )}
 
           {procesando && enCurso && (
             <p className="text-center text-xs text-muted-foreground">
