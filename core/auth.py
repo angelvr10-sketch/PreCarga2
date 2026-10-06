@@ -21,8 +21,46 @@ from core.supabase_db import (
 MAX_DESCARGAS_GRATIS = 30
 
 # Configuracion de email via Resend (debe estar en .env)
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-FROM_EMAIL = os.getenv("FROM_EMAIL", "Precarga <noreply@precarga.com>")
+#
+# El .strip() no es cosmetico: una clave con un espacio al final (muy facil de
+# colar al copiar, y el .env la deja entre comillas) produce la cabecera
+# "Bearer re_xxx " y httpx lanza LocalProtocolError: Illegal header value,
+# sin llegar a pegarle a la API de Resend. El error es de conexion, no de
+# credencial, asi que no dice nada de la clave.
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
+FROM_EMAIL = os.getenv("FROM_EMAIL", "Precarga <noreply@precarga.com>").strip()
+
+# Brevo (ex Sendinblue). A diferencia de Resend, Brevo deja verificar una
+# direccion de correo individual sin comprar ni verificar un dominio, asi que
+# es la opcion cuando todavia no hay dominio propio.
+#
+# El .strip() tambien aqui no es cosmetico: un espacio al final en la clave
+# hace que Brevo responda 401 en vez de decir que la clave no es valida.
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "").strip()
+BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "Precarga").strip()
+BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL", "").strip()
+
+# Brevo por SMTP. Se deja esta via porque el login se ve siempre en el panel y
+# la SMTP key se revela con un clic, mientras que la API key solo se muestra una
+# vez al crearla. El usuario con el que se entra es un identificador propio de
+# Brevo (algo@smtp-brevo.com), NO es el correo remitente.
+BREVO_SMTP_HOST = os.getenv("BREVO_SMTP_HOST", "smtp-relay.brevo.com").strip()
+BREVO_SMTP_PORT = int(os.getenv("BREVO_SMTP_PORT", "587") or 587)
+BREVO_SMTP_LOGIN = os.getenv("BREVO_SMTP_LOGIN", "").strip()
+BREVO_SMTP_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD", "").strip()
+
+# Envio directo por el SMTP de un Gmail propio. Esta es la unica via que no
+# pide ni cuenta en un proveedor de email ni dominio: se usa cuando todavia
+# no se tiene un numero de telefono para verificar la cuenta de Brevo.
+#
+# ADVERTENCIA: es comodo para desarrollo pero NO para produccion. Google corta
+# el envio si detecta volumen anomalo o si la cuenta corre riesgo de compromiso,
+# y ademas queda atado a una cuenta personal. Para produccion, un dominio y un
+# proveedor serio.
+GMAIL_USER = os.getenv("GMAIL_USER", "").strip()
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "").strip()
+GMAIL_SMTP_HOST = os.getenv("GMAIL_SMTP_HOST", "smtp.gmail.com").strip()
+GMAIL_SMTP_PORT = int(os.getenv("GMAIL_SMTP_PORT", "465") or 465)
 
 # Rate limiting: max 3 registros por IP en 24h
 MAX_REGISTROS_POR_IP = 3
@@ -310,46 +348,194 @@ def _registrar_intento(ip: str):
 #  Email
 # ──────────────────────────────────────────────────────────────
 
-def enviar_email(to: str, subject: str, body: str) -> bool:
-    """Envia email usando Resend (HTTP API — compatible con Render/Railway)."""
+def _email_desarrollo(to: str, subject: str, body: str) -> bool:
+    """Sin proveedor configurado: imprime el correo en la consola del servidor.
 
-    if not RESEND_API_KEY:
-        # Modo desarrollo: imprimir a consola
-        print(f"\n[EMAIL SIMULADO - DESARROLLO]")
-        print(f"Para: {to}")
-        print(f"Asunto: {subject}")
-        print(f"Cuerpo:\n{body}")
-        print(f"{'='*50}\n")
+    Es lo que permite probar el flujo de registro en local sin depender de
+    Resend ni de Brevo. Nunca debe quedar activo en produccion.
+    """
+    print(f"\n[EMAIL SIMULADO - DESARROLLO]")
+    print(f"Para: {to}")
+    print(f"Asunto: {subject}")
+    print(f"Cuerpo:\n{body}")
+    print(f"{'='*50}\n")
+    return True
+
+
+def _enviar_resend(to: str, subject: str, body: str) -> bool:
+    """Resend exige un dominio verificado, asi que necesita FROM_EMAIL real."""
+    response = httpx.post(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "from": FROM_EMAIL,
+            "to": [to],
+            "subject": subject,
+            "text": body,
+        },
+        timeout=10.0,
+    )
+    if response.status_code in (200, 201):
         return True
+    print(f"[EMAIL] Resend fallo [{response.status_code}] desde={FROM_EMAIL}: {response.text}")
+    return False
 
-    if not HAS_HTTPX:
-        print("ERROR: httpx no instalado. Ejecuta: pip install httpx")
-        return False
+
+def _enviar_brevo_smtp(to: str, subject: str, body: str) -> bool:
+    """Envio por SMTP de Brevo (smtp-relay.brevo.com:587 + STARTTLS).
+
+    El login es un identificador propio de Brevo del tipo algo@smtp-brevo.com
+    y la password es la SMTP key, que NO es lo mismo que la API key.
+    """
+    import smtplib
+    from email.message import EmailMessage
+    from email.utils import formataddr
+
+    msg = EmailMessage()
+    msg["From"] = formataddr((BREVO_SENDER_NAME, BREVO_SENDER_EMAIL))
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.set_content(body)
 
     try:
-        response = httpx.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {RESEND_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "from": FROM_EMAIL,
-                "to": [to],
-                "subject": subject,
-                "text": body,
-            },
-            timeout=10.0,
-        )
-        if response.status_code == 200 or response.status_code == 201:
-            print(f"Email enviado a {to} via Resend")
-            return True
-        else:
-            print(f"Error Resend [{response.status_code}]: {response.text}")
-            return False
-    except Exception as e:
-        print(f"Error inesperado al enviar email: {e}")
+        with smtplib.SMTP(BREVO_SMTP_HOST, BREVO_SMTP_PORT, timeout=15.0) as srv:
+            srv.ehlo()
+            # El relay de Brevo en 587 exige STARTTLS; en 465 ya viene TLS.
+            if BREVO_SMTP_PORT == 465:
+                srv.starttls()
+            else:
+                srv.starttls()
+            srv.ehlo()
+            srv.login(BREVO_SMTP_LOGIN, BREVO_SMTP_PASSWORD)
+            srv.send_message(msg)
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"[EMAIL] Brevo SMTP: usuario o password incorrectos ({e.smtp_code}). "
+              f"Revisar BREVO_SMTP_LOGIN y BREVO_SMTP_PASSWORD.")
         return False
+    except Exception as e:
+        print(f"[EMAIL] Brevo SMTP fallo: {type(e).__name__}: {e}")
+        return False
+
+
+def _enviar_gmail(to: str, subject: str, body: str) -> bool:
+    """Envio directo por SMTP de Gmail.
+
+    Requiere activacion en dos pasos con verificacion por app y una contrasena
+    de aplicacion. El puerto 465 usa TLS directo (SMTP_SSL) y el 587 usa
+    STARTTLS.
+    """
+    import smtplib
+    from email.message import EmailMessage
+    from email.utils import formataddr
+
+    msg = EmailMessage()
+    msg["From"] = formataddr((BREVO_SENDER_NAME, GMAIL_USER))
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.set_content(body)
+
+    try:
+        if GMAIL_SMTP_PORT == 465:
+            srv = smtplib.SMTP_SSL(GMAIL_SMTP_HOST, GMAIL_SMTP_PORT, timeout=15.0)
+        else:
+            srv = smtplib.SMTP(GMAIL_SMTP_HOST, GMAIL_SMTP_PORT, timeout=15.0)
+        with srv:
+            srv.ehlo()
+            if GMAIL_SMTP_PORT != 465:
+                srv.starttls()
+                srv.ehlo()
+            srv.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            srv.send_message(msg)
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"[EMAIL] Gmail: autenticacion fallida ({e.smtp_code}). Las causas "
+              f"habituales son una contrasena de aplicacion incorrecta o que la "
+              f"verificacion en dos pasos este desactivada.")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"[EMAIL] Gmail SMTP fallo: {type(e).__name__}: {e}")
+        return False
+    except Exception as e:
+        print(f"[EMAIL] Gmail fallo: {type(e).__name__}: {e}")
+        return False
+
+
+def _enviar_brevo(to: str, subject: str, body: str) -> bool:
+    """Brevo permite verificar un remitente suelto sin dominio (API v3 /smtp/email)."""
+    response = httpx.post(
+        "https://api.brevo.com/v3/smtp/email",
+        headers={
+            "api-key": BREVO_API_KEY,
+            "accept": "application/json",
+            "content-type": "application/json",
+        },
+        json={
+            "sender": {"name": BREVO_SENDER_NAME, "email": BREVO_SENDER_EMAIL},
+            "to": [{"email": to}],
+            "subject": subject,
+            "text": body,
+        },
+        timeout=10.0,
+    )
+    if response.status_code in (200, 201):
+        return True
+    print(f"[EMAIL] Brevo fallo [{response.status_code}] desde={BREVO_SENDER_EMAIL}: {response.text}")
+    return False
+
+
+def enviar_email(to: str, subject: str, body: str) -> bool:
+    """Envia un email transaccional por el proveedor que este configurado.
+
+    Se elige solo: si hay BREVO_API_KEY se usa Brevo, si no, Resend. No hace
+    falta variable extra para elegir, y asi queda claro en los logs cual de los
+    dos esta activo.
+
+    Los dos proveedores devuelven 401 con una clave invalida, pero el mensaje
+    no siempre lo aclara; por eso cada rama loguea remitente y respuesta, que
+    es lo primero que hay que mirar cuando "el registro no funciona".
+    """
+    # Gmail propio: no requiere cuenta en ningun proveedor ni dominio, asi que
+    # es la salida cuando todavia no se puede verificar la cuenta de Brevo.
+    if GMAIL_USER and GMAIL_APP_PASSWORD:
+        return _enviar_gmail(to, subject, body)
+
+    # Orden de preferencia: SMTP de Brevo, luego API de Brevo, luego Resend.
+    # Se prueba SMTP primero porque su login se ve siempre en el panel y la
+    # SMTP key se revela con un clic, mientras la API key solo se muestra una vez.
+    if BREVO_SMTP_LOGIN and BREVO_SMTP_PASSWORD:
+        if not BREVO_SENDER_EMAIL:
+            print("[EMAIL] falta BREVO_SENDER_EMAIL: no se puede construir el remitente.")
+            return False
+        return _enviar_brevo_smtp(to, subject, body)
+
+    if BREVO_API_KEY:
+        if not BREVO_SENDER_EMAIL:
+            print("[EMAIL] BREVO_API_KEY esta puesto pero falta BREVO_SENDER_EMAIL.")
+            return False
+        if not HAS_HTTPX:
+            print("[EMAIL] httpx no instalado. Ejecuta: pip install httpx")
+            return False
+        try:
+            return _enviar_brevo(to, subject, body)
+        except Exception as e:
+            print(f"[EMAIL] error inesperado con Brevo: {e}")
+            return False
+
+    if RESEND_API_KEY:
+        if not HAS_HTTPX:
+            print("[EMAIL] httpx no instalado. Ejecuta: pip install httpx")
+            return False
+        try:
+            return _enviar_resend(to, subject, body)
+        except Exception as e:
+            print(f"[EMAIL] error inesperado con Resend: {e}")
+            return False
+
+    return _email_desarrollo(to, subject, body)
 
 
 def enviar_codigo_verificacion(email: str, codigo: str) -> bool:
