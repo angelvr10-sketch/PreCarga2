@@ -25,3 +25,16 @@ test_*.py
 .vscode/
 .idea/
 *.tsbuildinfo
+
+# Los PDF del golden set son reportes operativos REALES de la plataforma (ya
+# estan fuera del repo por lo mismo). Sin esto, `COPY . .` los horneaba en la
+# imagen de produccion: 750 KB de documentos que no necesita nadie en el
+# servidor. Los tests que los usan se saltan solos si no estan.
+tests/fixtures/*.pdf
+scripts/_out/
+
+# Los CSV del catalogo quedaron sin uso el 2026-10-07: companias y activos salen
+# de Supabase. Se conservan en lib/ como respaldo historico y no se copian a la
+# imagen, donde solo confunden (parecen la fuente de verdad).
+lib/companias.csv
+lib/activos.csv
