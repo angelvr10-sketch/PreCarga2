@@ -103,6 +103,19 @@ export default function Companias() {
     }
   }
 
+  /**
+   * El backend responde 409 si la razón social ya está en el catálogo, para no
+   * dejar filas repetidas (que antes sí se creaban, y `obtener_nombre_compania`
+   * se quedaba con la primera que encontraba, no necesariamente la recién escrita).
+   *
+   * Antes el `error` de la mutación no se pintaba en ninguna parte: la pantalla
+   * simplemente no cerraba el diálogo y no decía por qué. `api.ts` ya traduce los
+   * mensajes del backend, así que el `detail` llega en español.
+   */
+  const errorCreate = createMutation.error instanceof Error
+    ? createMutation.error.message
+    : null
+
   if (isError) {
     return (
       <div className="flex flex-col space-y-6">
@@ -215,6 +228,12 @@ export default function Companias() {
                 />
               </div>
             </div>
+            {errorCreate && (
+              <p className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>{errorCreate}</span>
+              </p>
+            )}
             <DialogFooter>
               <Button variant="outline" type="button" onClick={() => setDialogOpen(false)}>
                 Cancelar

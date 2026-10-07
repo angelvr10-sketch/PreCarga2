@@ -54,6 +54,12 @@
       "url": "/procesar"
     },
     {
+      "name": "Comandas de alimentos",
+      "short_name": "Comandas",
+      "description": "Ver los KPIs y descargar los PDF de comandas del día",
+      "url": "/comandas"
+    },
+    {
       "name": "Generar altas",
       "short_name": "Altas",
       "description": "Seleccionar solicitudes y generar las entradas de alta",

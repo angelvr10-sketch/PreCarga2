@@ -11,8 +11,11 @@ LOGS_DIR   = BASE_DIR / "logs"
 RUTA_PLANTILLA        = LIB_DIR / "plantilla.xlsx"
 RUTA_PLANTILLA_SALIDA = LIB_DIR / "salida.xlsx"
 RUTA_PLANTILLA_ENTRADA= LIB_DIR / "entrada.xlsx"
-RUTA_COMPANIAS        = LIB_DIR / "companias.csv"
-RUTA_ACTIVOS          = LIB_DIR / "activos.csv"
+
+# `companias.csv` y `activos.csv` se dejaron de usar el 2026-10-07: la UI escribe
+# en Supabase y el procesador leia el CSV, asi que cualquier alta desde la app era
+# invisible. Ahora los dos catalogos salen de la base (ver core/catalogo.py).
+# Los archivos se conservan en lib/ solo como respaldo historico.
 MAPEO_ACTIVOS = {
     "COORDINACION DE SERVICIOS MARINOS Y DE MANTENIMIENTO":
         "COORDINACION DE SERVICIOS MARINOS Y DE MANTENIMIENTO, CONFIABILIDAD Y CONSTRUCCION DE INFRAESTRUCTURA",

@@ -90,10 +90,26 @@ _CLIENT = (
 )
 
 
+def _reabrir_cliente():
+    """Crea el pool de conexiones. Se llama al arrancar y al volver a usarlo
+    despues de un `cerrar_cliente()`."""
+    global _CLIENT
+    if _CLIENT is None and HAS_HTTPX:
+        _CLIENT = httpx.Client(
+            timeout=TIMEOUT_CONFIG,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+        )
+    return _CLIENT
+
+
 def cerrar_cliente():
     """Cierra el pool de conexiones. Llamar al apagar la app (ver main.py).
 
     Sin esto, cada recarga de `uvicorn --reload` deja sockets abiertos.
+
+    Dejar `_CLIENT` en None NO deja el modulo inservible: la proxima peticion lo
+    reabre (ver `_request_with_retry`). Cerrar es una courtesy con el sistema, no
+    un estado terminal.
     """
     global _CLIENT
     if _CLIENT is not None:
@@ -124,8 +140,20 @@ def _request_with_retry(method, url, **kwargs):
     Reintenta errores de transporte y tambien 5xx / 429 de PostgREST. Los 4xx
     no se reintentan: son deterministas y solo gastarian tiempo.
     """
-    if not _CLIENT:
+    if not HAS_HTTPX:
         raise RuntimeError("httpx no esta instalado. Ejecuta: pip install httpx")
+    if _CLIENT is None:
+        # `cerrar_cliente()` dejo el pool cerrado (se llama al apagar la app, y en
+        # los tests cuando un TestClient termina). Antes esto era un `raise` con un
+        # mensaje que culpaba a httpx, que si estaba instalado: el sintoma era
+        # "httpx no esta instalado" siendo que lo que faltaba era reabrir el pool.
+        #
+        # Con la suite de tests se notaba mucho: el primer test que levanta
+        # `TestClient(main.app)` cerraba el pool al salir del `with`, y a partir de
+        # ahi cualquier peticion real a Supabase fallaba. En produccion es la
+        # misma trampa: cualquier llamada posterior al apagado quedaba muerta
+        # hasta reiniciar.
+        _reabrir_cliente()
 
     last_exception = None
     for attempt in range(MAX_RETRIES):
@@ -397,8 +425,20 @@ def agregar_compania_supabase(razon_social: str, nombre_corto: str):
     return _post("companias", data)
 
 def eliminar_compania_supabase(razon_social: str):
-    """Elimina una compañía basada en su razón social."""
-    return _delete("companias", {"razon_social": razon_social})
+    """Elimina una compañía por su razón social.
+
+    El filtro lleva el operador `eq.` explícito. Sin él, PostgREST lo toma como
+    sintaxis (`PGRST100: unexpected "P" expecting "not" or operator`), y el DELETE
+    responde 400 con un cuerpo vacío: el borrado NO ocurre y el error no dice por
+    qué.
+
+    Esto rompía el botón de borrar de la pantalla de Compañías con CUALQUIER razón
+    social: no solo las que empiezan por 'e' o 'i', que es lo que daria el mal
+    parseo de una palabra clave, sino todas. `_get` y `_patch` reciben los filtros
+    ya con operador desde quien los arma (ver `_filtro_usuario`), así que aquí
+    ocurre igual: se pone explícito.
+    """
+    return _delete("companias", {"razon_social": f"eq.{razon_social}"})
 
 # ──────────────────────────────────────────────────────────────
 #  Gestión de Activos
@@ -414,8 +454,13 @@ def agregar_activo_supabase(nombre: str):
     return _post("activos", {"nombre": nombre})
 
 def eliminar_activo_supabase(nombre: str):
-    """Elimina un activo por nombre."""
-    return _delete("activos", {"nombre": nombre})
+    """Elimina un activo por nombre.
+
+    Mismo `eq.` que en companias: sin el operador, PostgREST responde 400 y no
+    borra nada. Los activos son palabras ('ACTIVOS', 'PLATAFORMA...'), asi que el
+    fallo es identico.
+    """
+    return _delete("activos", {"nombre": f"eq.{nombre}"})
 
 # ──────────────────────────────────────────────────────────────
 #  Funciones de Storage (Bucket)

@@ -2,7 +2,7 @@
 // VERSION, aqui la version vive en el frontend porque la app no expone una
 // ruta de version. Al hacer un release, incrementarla para que el modal
 // vuelva a mostrarse una vez por usuario.
-export const VERSION = '0.6'
+export const VERSION = '0.7'
 
 export interface Cambio {
   icono: string
@@ -12,6 +12,12 @@ export interface Cambio {
 
 // Lo mas reciente debe ir primero.
 export const CAMBIOS: Cambio[] = [
+  {
+    icono: '🍱',
+    titulo: 'Comandas de alimentos',
+    detalle:
+      'Nuevo apartado Comandas: sube el reporte PDF del día y las comandas quedan guardadas por fecha, con sus 6 indicadores, las gráficas de destino y transporte, y la tabla completa. Los PDF (machote, vales y reporte estadístico) se generan al pedirlos, no al abrir la pantalla, y cada descarga cuenta como una descarga de tu plan.',
+  },
   {
     icono: '📈',
     titulo: 'Nueva interfaz de graficas',

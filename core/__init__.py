@@ -5,7 +5,7 @@ from .procesador import (
     leer_personal_de_xlsx, generar_plantilla_desde_bd,
 )
 from .catalogo import (
-    leer_companias, guardar_companias, obtener_nombre_compania,
-    leer_activos, guardar_activos,
+    obtener_nombre_compania, indice_companias, contiene_activo,
+    leer_activos, invalidar_cache,
 )
 from .config import logger, SOL_DIR, LOGS_DIR

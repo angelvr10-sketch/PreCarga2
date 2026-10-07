@@ -15,6 +15,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Rocket,
+  UtensilsCrossed,
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '@/hooks/use-auth'
@@ -30,6 +31,7 @@ type RouteTo =
   | '/companias'
   | '/activos'
   | '/logs'
+  | '/comandas'
   | '/admin/usuarios'
   | '/planes'
 
@@ -40,6 +42,7 @@ const navItems: Array<{ to: RouteTo; label: string; icon: LucideIcon }> = [
   { to: '/bajas', label: 'Bajas', icon: UserMinus },
   { to: '/companias', label: 'Compañías', icon: Building2 },
   { to: '/activos', label: 'Activos', icon: Package },
+  { to: '/comandas', label: 'Comandas', icon: UtensilsCrossed },
   { to: '/logs', label: 'Logs', icon: ScrollText },
 ]
 

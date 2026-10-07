@@ -36,12 +36,22 @@ class VerifyRequest(BaseModel):
 
 
 def _serialize_user(user: dict) -> dict:
-    """Convierte un usuario de BD a formato JSON para el frontend."""
+    """Convierte un usuario de BD a formato JSON para el frontend.
+
+    `rol` va aparte de `admin` a proposito. Con solo el booleano `admin` el
+    frontend no puede distinguir un `usuario` normal de un `lector`, y terminaba
+    tratando a todo el mundo que no fuera admin como lector. El modulo de
+    comandas necesita los tres: `admin` y `usuario` pueden generar todos los
+    reportes, `lector` solo el estadistico.
+
+    Es un campo ADITIVO: el resto de la app lee `admin` y sigue igual.
+    """
     return {
         "id": str(user.get("id", "")),
         "nombre": user.get("username", user.get("nombre", "")),
         "email": user.get("email", ""),
         "admin": user.get("rol") == "admin",
+        "rol": user.get("rol", ""),
         "verificado": user.get("email_verificado", user.get("verificado", False)),
         "created_at": user.get("creado", ""),
     }

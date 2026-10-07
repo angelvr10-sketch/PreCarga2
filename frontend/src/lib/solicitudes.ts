@@ -20,8 +20,14 @@ import type { Solicitud, DashboardStats, ProgramacionDias, ProgramacionArea } fr
    que se pidio.
    ============================================================ */
 
-/** Content-types con los que el servidor responde el archivo de verdad. */
-const TIPOS_ARCHIVO = /spreadsheet|excel|octet-stream|text\/csv|text\/plain/
+/**
+ * Content-types con los que el servidor responde el archivo de verdad.
+ *
+ * Incluye `application/pdf` por los reportes de comandas, que usan el mismo
+ * `descargar()`. Asi el manejo de la redireccion a /checkout y del 402 por
+ * cuota agotada es uno solo, en vez de dos implementaciones parecidas.
+ */
+const TIPOS_ARCHIVO = /spreadsheet|excel|octet-stream|text\/csv|text\/plain|application\/pdf/
 
 export type MotivoFallo = 'sin-sesion' | 'sin-permiso' | 'sin-archivo' | 'error'
 export type ResultadoDescarga = { ok: true } | { ok: false; motivo: MotivoFallo }

@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Union
 from .config import (
     logger, SOL_DIR, RUTA_PLANTILLA, RUTA_PLANTILLA_SALIDA,
-    RUTA_PLANTILLA_ENTRADA, RUTA_ACTIVOS, MAPEO_ACTIVOS
+    RUTA_PLANTILLA_ENTRADA, MAPEO_ACTIVOS
 )
-from .catalogo import obtener_nombre_compania, leer_activos
+from .catalogo import obtener_nombre_compania, leer_activos, nombre_para_listado
 from .db import (guardar_solicitud, obtener_solicitud, obtener_personal_sube,
                  obtener_personal_baja, normalizar_fecha_iso)
 from .supabase_db import _get
@@ -432,6 +432,12 @@ def listar_solicitudes_xlsx(page: int = 1, limit: int = 20, search: Optional[str
     """
     Lee solicitudes desde Supabase con paginación y búsqueda opcional.
     Devuelve una tupla: (lista de dicts, total_de_registros).
+
+    `razonsocial` viene en el `select` a propósito aunque no se use para ordenar: es
+    lo que permite resolver el alias de compañía al MOSTRAR, en vez de confiar en
+    `compania`, que es la copia que se horneó al procesar el PDF (ver
+    `catalogo.nombre_para_listado`). Si no se trae, los listados volverían a
+    mostrar el nombre largo en las solicitudes viejas.
     """
     from .supabase_db import _get, _count_rows
     
@@ -446,9 +452,9 @@ def listar_solicitudes_xlsx(page: int = 1, limit: int = 20, search: Optional[str
         
         # 1. Obtener los registros paginados
         params = {
-            "select": "*", 
-            "order": "fecha_llegada.desc,procesado.desc", 
-            "limit": limit, 
+            "select": "*",
+            "order": "fecha_llegada.desc,procesado.desc",
+            "limit": limit,
             "offset": offset
         }
         
@@ -466,12 +472,15 @@ def listar_solicitudes_xlsx(page: int = 1, limit: int = 20, search: Optional[str
 
         result = []
         for r in rows:
-            fecha_mod = "" 
-            
+            fecha_mod = ""
+
             result.append({
                 "id":          r["id"],
                 "nombre":      r["numero"],
-                "compania":    r["compania"] or "",
+                # Se resuelve el alias contra el catálogo VIVO, no la copia de
+                # `compania`: así lo que se ve sigue al catálogo aunque la fila se
+                # haya procesado antes de que existiera el alias.
+                "compania":    nombre_para_listado(r),
                 "n":           r["n_personas"],
                 "fecha":       r["fecha_llegada"] or "",
                 "fecha_mod":   fecha_mod,

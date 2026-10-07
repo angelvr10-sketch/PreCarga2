@@ -54,6 +54,7 @@ const Planes = lazy(() => import('@/routes/planes'))
 const Checkout = lazy(() => import('@/routes/checkout'))
 const StripeSuccess = lazy(() => import('@/routes/stripe-success'))
 const StripeCancel = lazy(() => import('@/routes/stripe-cancel'))
+const Comandas = lazy(() => import('@/routes/comandas'))
 
 function RouteFallback() {
   return (
@@ -179,6 +180,15 @@ const stripeCancelRoute = createRoute({
   component: () => <LazyRoute component={StripeCancel} />,
 })
 
+// Comandas de alimentos al area. Va dentro de protectedLayout, asi que hereda
+// el guard `beforeLoad`: sin sesion, el router redirige a /login. No hace falta
+// repetir esa proteccion aqui.
+const comandasRoute = createRoute({
+  getParentRoute: () => protectedLayout,
+  path: '/comandas',
+  component: () => <LazyRoute component={Comandas} />,
+})
+
 const routeTree = rootRoute.addChildren([
   landingRoute,
   precargaBotRoute,
@@ -198,6 +208,7 @@ const routeTree = rootRoute.addChildren([
     checkoutRoute,
     stripeSuccessRoute,
     stripeCancelRoute,
+    comandasRoute,
   ]),
 ])
 

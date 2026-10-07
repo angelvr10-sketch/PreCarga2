@@ -10,3 +10,15 @@ stripe==15.6.0
 python-dotenv==1.2.3
 httpx==0.28.1
 bcrypt==5.0.0
+
+# ── Modulo de comandas (core/comandas/) ───────────────────────
+# pypdf  : lee el texto de los reportes de comandas.
+# reportlab: dibuja los cinco PDF (machote, vales, reporte estadistico).
+#
+# NO se agrega `supabase`: el acceso a la base ya esta resuelto por
+# core/supabase_db.py (httpx con keep-alive y reintentos), y meter el SDK
+# seria una segunda forma de hacer lo mismo.
+# NO se agrega `pandas`: las agregaciones viven en core/comandas/stats.py y
+# devuelven diccionarios, que es lo que el JSON y el PDF necesitan.
+pypdf==6.19.0
+reportlab==4.4.4

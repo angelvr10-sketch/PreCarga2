@@ -34,3 +34,16 @@ data/
 /bot*.jpg
 /robot-pro.png
 /precarga-bot-comandas.svg
+
+# ── Modulo de comandas ─────────────────────────────────────────
+# Salida de scripts/comparar_pdf.py: PDFs y volcados de texto usados solo para
+# comparar el port contra la app vieja. Se regeneran con `python
+# scripts/comparar_pdf.py --guardar`.
+scripts/_out/
+
+# Los PDFs reales de la plataforma que se usan de golden set NO van al repo:
+# son documentos operativos. Se versionan solo los casos sinteticos.
+tests/fixtures/*.pdf
+
+.pytest_cache/
+.coverage

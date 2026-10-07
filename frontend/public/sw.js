@@ -24,15 +24,34 @@
 // Subir esto en CUALQUIER cambio de sw.js. Es lo unico que decide que caches
 // se descartan en activate: si el archivo del worker cambia pero VERSION no,
 // las caches viejas sobreviven con contenido que ya no corresponde.
-const VERSION = 'v3';
+//
+// v4 (2026-10-06): llega la ruta /comandas. Las ESTRATEGIAS no cambian, y esa
+// es la parte importante: la regla de la linea 91 ("/api/ nunca se cachea")
+// ya cubre /api/comandas/* sin tocar nada, que es justo lo que un reporte con
+// datos de otro usuario necesita.
+//
+// Lo que si cambia es el espurio. Cada despliegue genera assets con hash nuevo
+// (index-AbCdEf.js), y la cache de /assets/ guarda CADA URL que se ha pedido
+// alguna vez. Los nombres viejos nunca mas se piden, asi que se acumulan solos.
+// Rotar VERSION los borra en el activate. Por eso v3 -> v4 sin cambiar ni una
+// estrategia.
+const VERSION = 'v4';
 const CACHE_ACTIVOS = `precarga-${VERSION}`;
 const CACHE_INMUTABLES = `precarga-inmutables-${VERSION}`;
 
 // Solo estos. Ampliarlos a ciegas termina sirviendo index.html como si fuera
 // un .js y rompiendo la app entera.
+//
+// '/comandas' esta por simetria con '/dashboard', pero conviene ser honesto:
+// NO aporta nada funcional. La regla de navegacion (abajo) hace
+// `fetch(request).catch(() => caches.match('/'))`: el plan B es SIEMPRE '/',
+// nunca la ruta pedida. O sea, sin esta entrada, entrar a /comandas sin
+// conexion funciona igual, sirviendo el index.html que hay bajo '/'. Se deja
+// igual porque ocupa poco y deja el array legible como mapa de la app.
 const PRECACHE = [
   '/',
   '/dashboard',
+  '/comandas',
   '/manifest.webmanifest',
   '/favicon/favicon.ico',
   '/favicon/icon-192.png',

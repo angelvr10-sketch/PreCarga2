@@ -31,7 +31,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 
-from routers import api, api_auth, api_data
+from routers import api, api_auth, api_data, api_comandas
 from routers import auth as auth_router
 from routers import payments as payments_router
 from core.auth import init_db
@@ -121,6 +121,7 @@ app.include_router(payments_router.router)
 app.include_router(api.router)
 app.include_router(api_auth.router)
 app.include_router(api_data.router)
+app.include_router(api_comandas.router)
 
 
 # ── SPA fallback ──────────────────────────────────────────────

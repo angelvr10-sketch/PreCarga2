@@ -1,0 +1,26 @@
+# Dependencias SOLO para correr los tests en local. No van en requirements.txt
+# porque el servidor no las necesita.
+#
+#     pip install -r requirements-dev.txt
+#     python -m pytest
+#
+# pytest corre la suite del modulo de comandas. Los tests que comparan contra la
+# app de Streamlit vieja (tests/test_comparar_original.py) se saltan solos si
+# `C:\Users\Admin\Desktop\comandas\app.py` no esta en esa maquina.
+pytest==8.4.2
+pytest-asyncio==1.2.0
+
+# ── Para `tests/test_comparar_original.py` y `scripts/comparar_*.py` ──
+# Solo hacen falta si la app vieja esta presente en disco. Cargan su clase
+# ComandaApp para comparar PDF y parseo contra el modulo nuevo.
+#
+# streamlit, pandas, plotly y supabase son los imports que hace la app de
+# Streamlit al cargarse. Se falsea streamlit con un stub, pero el resto de los
+# modulos tienen que existir de verdad para que el import no reviente.
+#
+# Si no los instalas, la app vieja no se puede cargar y los tests de
+# comparacion se saltan. El resto de la suite sigue funcionando.
+streamlit>=1.32
+pandas>=2.0
+plotly>=5.18
+supabase

@@ -3,6 +3,7 @@ import os
 import re
 from datetime import datetime
 from core.supabase_db import _get, _post, _post_batch, _delete, _patch, HAS_HTTPX
+from core.catalogo import nombre_para_listado
 from core.config import logger
 
 # Filas por viaje en el insert batch de `personal`. Ver _post_batch.
@@ -140,21 +141,35 @@ def guardar_solicitud(info: dict, personal_sube: list, personal_baja: list,
 def listar_solicitudes_db(limit: int = 200) -> list[dict]:
     """
     Devuelve solicitudes ordenadas por fecha de llegada DESC.
+
+    Igual que `listar_solicitudes_xlsx`: la compañía se resuelve contra el catálogo
+    al mostrar (ver `catalogo.nombre_para_listado`), no leyendo la copia de
+    `compania`.
     """
     rows = _get("solicitudes",
-                select="numero,compania,n_personas,fecha_llegada,transporte,tiene_bajas,n_bajas,archivo,procesado",
+                select="numero,compania,razonsocial,n_personas,fecha_llegada,transporte,tiene_bajas,n_bajas,archivo,procesado",
                 order="fecha_llegada.desc,procesado.desc",
                 limit=limit)
-    return [dict(r) for r in rows]
+    salida = []
+    for r in rows:
+        fila = dict(r)
+        fila["compania"] = nombre_para_listado(r)
+        salida.append(fila)
+    return salida
 
 
 def listar_bajas_db() -> list[dict]:
     """Devuelve solicitudes que tienen personal de baja."""
     rows = _get("solicitudes",
-                select="numero,compania,n_bajas",
+                select="numero,compania,razonsocial,n_bajas",
                 filters={"tiene_bajas": "eq.true"},
                 order="procesado.desc")
-    return [dict(r) for r in rows]
+    salida = []
+    for r in rows:
+        fila = dict(r)
+        fila["compania"] = nombre_para_listado(r)
+        salida.append(fila)
+    return salida
 
 
 def obtener_solicitud(numero: str) -> dict | None:

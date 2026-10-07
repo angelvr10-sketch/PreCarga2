@@ -15,6 +15,8 @@ from core.supabase_db import (
 )
 from core.db import listar_bajas_db, listar_solicitudes_db
 from core.auth import get_user_from_token, listar_usuarios
+from core.catalogo import contiene_activo, invalidar_cache, obtener_nombre_compania_existe
+from core.comandas.repository import total_comandas
 from core.config import LOGS_DIR
 
 router = APIRouter(prefix="/api")
@@ -63,6 +65,11 @@ def dashboard_stats(request: Request):
         "altas_generadas": _count_rows("personal", {"tipo": "eq.sube"}),
         "bajas_procesadas": _count_rows("personal", {"tipo": "eq.baja"}),
         "total_companias": _count_rows("companias"),
+        # Comandas de alimentos de los dos barcos, de todos los usuarios. Es la
+        # unica cifra de esta tarjeta que viene del modulo de comandas, asi que
+        # se pide ahi y no con un `_count_rows` aqui: el modulo de comandas es
+        # el que sabe de esa tabla y de sus reglas. Global, como las demas.
+        "total_comandas": total_comandas(),
     }
 
 
@@ -178,13 +185,24 @@ def solicitudes_list(request: Request, page: int = 1, search: str = ""):
 
 
 # ── Compañías ──────────────────────────────────────────────────
+#
+# Los seis endpoints exigen sesion. Antes no la exigian: con la URL a mano
+# cualquiera podia POSTear o DELETEear en companias y activos sin estar
+# autenticado, y un borrado desde una pestana sin sesion dejaba el catalogo sin
+# la razon social que el procesador usa para el alias de la celda E8.
+#
+# Cada alta o baja invalida la cache del catalogo (core/catalogo.py). Sin esto,
+# agregar una compania tardaba hasta 5 minutos en verse en los Excel generados,
+# que es justo la confusion que reporto el usuario al empezar: la compania estaba
+# en la tabla pero el alias no aparecia.
 class CompaniaCreate(BaseModel):
     razon_social: str
     nombre_corto: str
 
 
 @router.get("/companias")
-async def companias_list():
+async def companias_list(request: Request):
+    _require_auth(request)
     data = leer_companias_supabase()
     return [
         {
@@ -197,16 +215,29 @@ async def companias_list():
 
 
 @router.post("/companias")
-async def companias_create(req: CompaniaCreate):
-    result = agregar_compania_supabase(req.razon_social, req.nombre_corto)
-    if result:
-        return {"id": str(result.get("id", "")), "ok": True}
+async def companias_create(request: Request, req: CompaniaCreate):
+    _require_auth(request)
+
+    razon = (req.razon_social or "").strip()
+    if not razon:
+        raise HTTPException(status_code=400, detail="La razón social está vacía")
+
+    # `_post` inserta sin comprobar duplicados. Sin esto, dar dos veces en Guardar
+    # deja dos filas y `obtener_nombre_compania` agarra la primera que encuentra,
+    # que no necesariamente es la que acaba de escribir el usuario.
+    if obtener_nombre_compania_existe(razon):
+        raise HTTPException(status_code=409, detail=f"'{razon}' ya está en la lista")
+
+    agregar_compania_supabase(razon, (req.nombre_corto or "").strip())
+    invalidar_cache(companias=True, activos=False)
     return {"ok": True}
 
 
 @router.delete("/companias/{razon_social}")
-async def companias_delete(razon_social: str):
+async def companias_delete(request: Request, razon_social: str):
+    _require_auth(request)
     eliminar_compania_supabase(razon_social)
+    invalidar_cache(companias=True, activos=False)
     return {"ok": True}
 
 
@@ -216,21 +247,32 @@ class ActivoCreate(BaseModel):
 
 
 @router.get("/activos")
-async def activos_list():
+async def activos_list(request: Request):
+    _require_auth(request)
     data = leer_activos_supabase()
-    # Returns list of strings from the existing function
     return [{"id": "", "nombre": a} for a in data]
 
 
 @router.post("/activos")
-async def activos_create(req: ActivoCreate):
-    result = agregar_activo_supabase(req.nombre)
+async def activos_create(request: Request, req: ActivoCreate):
+    _require_auth(request)
+
+    nombre = (req.nombre or "").strip()
+    if not nombre:
+        raise HTTPException(status_code=400, detail="El nombre del activo está vacío")
+    if contiene_activo(nombre):
+        raise HTTPException(status_code=409, detail=f"'{nombre}' ya está en la lista")
+
+    agregar_activo_supabase(nombre)
+    invalidar_cache(companias=False, activos=True)
     return {"ok": True}
 
 
 @router.delete("/activos/{nombre}")
-async def activos_delete(nombre: str):
+async def activos_delete(request: Request, nombre: str):
+    _require_auth(request)
     eliminar_activo_supabase(nombre)
+    invalidar_cache(companias=False, activos=True)
     return {"ok": True}
 
 

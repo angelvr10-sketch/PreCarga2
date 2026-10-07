@@ -16,11 +16,37 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { FullscreenToggle } from '@/components/ui/fullscreen-toggle'
 import { useFullscreen } from '@/hooks/use-fullscreen'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { GraficaComandasPorBarco } from '@/components/dashboard/grafica-comandas'
 import { Button } from '@/components/ui/button'
 import { solicitudesApi, descargarSolicitud, mensajeDescargaError } from '@/lib/solicitudes'
 import type { DashboardStats } from '@/types'
 import { cn, formatFecha } from '@/lib/utils'
-import { FileText, ArrowRightLeft, UserPlus, UserMinus, ArrowRight, Download, Building2, AlertCircle, Check, X } from 'lucide-react'
+// `UserPlus` y `UserMinus` se siguen importando aunque las tarjetas de Altas y
+// Bajas esten comentadas: hacen falta para volver a activarlas, y el tsconfig
+// tiene `noUnusedLocals: false` asi que no molestan.
+import { FileText, ArrowRightLeft, UserPlus, UserMinus, ArrowRight, Download, Building2, AlertCircle, Check, X, ClipboardList } from 'lucide-react'
+
+/**
+ * Columnas de la rejilla segun cuantas tarjetas haya activas.
+ *
+ * Con 5 tarjetas cabian 5 columnas. Al pausar Altas y Bajas se quedaron 3
+ * tarjetas en una rejilla de 5, y el hueco se notaba: dos columnas vacias a la
+ * derecha. Ahora el ancho sale del numero de tarjetas.
+ *
+ * Es un diccionario y no un `` `lg:grid-cols-${n}` `` porque Tailwind Extrae las
+ * clases EN TIEMPO DE COMPILAR leyendo el fuente: una clase construida por
+ * concatenacion no aparece en ninguna parte del archivo, no se genera, y en
+ * produccion el `lg:grid-cols-3` sencillamente no existe. Por eso los valores
+ * tienen que estar escritos enteros aqui.
+ *
+ * Descomentar las dos tarjetas de Altas y Bajas vuelve a dar 5, solo.
+ */
+const COLUMNAS_POR_TARJETA: Record<number, string> = {
+  2: 'lg:grid-cols-2',
+  3: 'lg:grid-cols-3',
+  4: 'lg:grid-cols-4',
+  5: 'lg:grid-cols-5',
+}
 import type { ProgramacionArea } from '@/types'
 
 type Periodo = 14 | 30 | 180 | 365
@@ -35,6 +61,17 @@ const PERIODOS: { value: Periodo; label: string; plural: string }[] = [
 // `hint` documenta la unidad de cada tarjeta. Sin esto "Altas Generadas 5059"
 // es ambiguo: son personas, no folios, y esa confusion es la que hace dudar
 // de los numeros sin poder contrastarlos con la BD.
+//
+// ── ALTAS Y BAJAS: COMENTADAS POR AHORA ────────────────────────────
+// Las tarjetas de "Altas Generadas" y "Bajas Procesadas" se pausaron el
+// 2026-10-06 a pedido del usuario, para dejarle el lugar a "Total Comandas".
+// Se conservan aqui, sin borrar, para volver a activarlas:
+//    - quita las dos lineas comentadas de abajo,
+//    - y `DashboardStats` sigue trayendo `altas_generadas` y `bajas_procesadas`,
+//      asi que el backend no hay que tocarlo.
+//
+// No se borraron porque los numeros que dan son ciertos y el endpoint que los
+// calcula sigue vivo; lo que cambio es que por ahora no son los que interesan.
 const statCards: {
   key: keyof DashboardStats
   title: string
@@ -44,9 +81,12 @@ const statCards: {
 }[] = [
   { key: 'total_solicitudes', title: 'Total Solicitudes', hint: 'folios registrados', icon: FileText, color: 'text-blue-400' },
   { key: 'total_movimientos', title: 'Total Movimientos', hint: 'altas + bajas', icon: ArrowRightLeft, color: 'text-purple-400' },
-  { key: 'altas_generadas', title: 'Altas Generadas', hint: 'personas que suben', icon: UserPlus, color: 'text-emerald-400' },
-  { key: 'bajas_procesadas', title: 'Bajas Procesadas', hint: 'personas que bajan', icon: UserMinus, color: 'text-orange-400' },
+  // { key: 'altas_generadas', title: 'Altas Generadas', hint: 'personas que suben', icon: UserPlus, color: 'text-emerald-400' },
+  // { key: 'bajas_procesadas', title: 'Bajas Procesadas', hint: 'personas que bajan', icon: UserMinus, color: 'text-orange-400' },
   { key: 'total_companias', title: 'Compañías', hint: 'razones sociales', icon: Building2, color: 'text-teal-400' },
+  // Comandas de alimentos de los dos barcos. Acumulado historico, como las
+  // demas: no depende del selector de periodo de abajo.
+  { key: 'total_comandas', title: 'Total Comandas', hint: 'ambos barcos', icon: ClipboardList, color: 'text-amber-400' },
 ]
 
 // Las 4 series de "Altas vs Bajas", todas en la misma grafica.
@@ -252,7 +292,7 @@ export default function Dashboard() {
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className={cn('grid gap-4 sm:grid-cols-2', COLUMNAS_POR_TARJETA[statCards.length] ?? 'lg:grid-cols-4')}>
         {statCards.map((card) => {
           const Icon = card.icon
           const value = stats?.[card.key]
@@ -479,6 +519,11 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
+      {/* Va justo debajo de Altas vs Bajas y comparte su `periodo`: son las dos
+          graficas de "movimiento en el tiempo" y tiene que ser util comparar una
+          con la otra sobre la misma ventana. */}
+      <GraficaComandasPorBarco dias={periodo} periodoLabel={periodoLabel} />
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Solicitudes Recientes</CardTitle>
@@ -575,3 +620,4 @@ export default function Dashboard() {
     </div>
   )
 }
+
