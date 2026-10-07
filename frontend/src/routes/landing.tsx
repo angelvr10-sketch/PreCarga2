@@ -393,7 +393,7 @@ export default function Landing() {
                 <div className="flex flex-col items-center text-center lg:items-start lg:text-left">
                   {/* pill: icono + etiqueta del producto, con el contador como
                       sufijo para que se sepa cuantos hay */}
-                  <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-4 py-1.5 text-[13px] font-medium text-white">
+                  <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-4 py-1.5 text-[14px] font-medium text-white">
                     <producto.icono className="h-4 w-4 text-primary" />
                     {producto.etiqueta}
                     <span className="text-white/45">
@@ -422,7 +422,7 @@ export default function Landing() {
                             <Icono className="h-5 w-5 text-[#38bdf8]" />
                           </span>
                           <span className="min-w-0">
-                            <span className="block text-[15px] font-semibold text-white">
+                            <span className="block text-[16px] font-semibold text-white">
                               {p.titulo}
                             </span>
                             <span className="mt-0.5 block text-sm leading-relaxed text-muted-foreground">
@@ -435,7 +435,7 @@ export default function Landing() {
                   </ul>
 
                   {/* cierre con barra azul */}
-                  <p className="mt-9 max-w-lg border-l-2 border-primary pl-4 text-left text-[15px] leading-relaxed text-muted-foreground">
+                  <p className="mt-9 max-w-lg border-l-2 border-primary pl-4 text-left text-[16px] leading-relaxed text-muted-foreground">
                     {producto.cierre.split(',')[0]},
                     <span className="mt-0.5 block font-semibold text-[#7dd3fc]">
                       {producto.cierre.slice(producto.cierre.indexOf(',') + 1).trim()}

@@ -224,7 +224,7 @@ export default function Comandas() {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,340px)_1fr]">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <CardTitle className="flex items-center gap-1.5 text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground">
               <CalendarDays className="h-3.5 w-3.5" />
               Fecha de operación
             </CardTitle>
@@ -258,7 +258,7 @@ export default function Comandas() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <CardTitle className="text-[11.5px] font-semibold uppercase tracking-wider text-muted-foreground">
               📂 Reporte de comandas
             </CardTitle>
           </CardHeader>
@@ -281,7 +281,7 @@ export default function Comandas() {
             Diagnóstico
           </Button>
           {verDiagnostico && diagnostico.data && (
-            <pre className="flex-1 overflow-auto rounded-md border border-border/60 bg-muted/40 p-2.5 text-[11px] leading-relaxed">
+            <pre className="flex-1 overflow-auto rounded-md border border-border/60 bg-muted/40 p-2.5 text-[11.5px] leading-relaxed">
               {`usuario: ${diagnostico.data.usuario}
 comandas en la tabla: ${diagnostico.data.comandas_en_tabla}
 tuyas: ${diagnostico.data.mis_comandas}

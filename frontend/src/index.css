@@ -73,6 +73,22 @@
     height: 100%;
   }
 
+  /*
+    Tamaño base de la tipografía: 17px en vez del 16px del navegador.
+
+    El conjunto de Tailwind esta en rem (`text-sm` = 0.875rem, `text-xs` =
+    0.75rem), asi que cambiar la raiz escala TODO el texto de la aplicacion de
+    una vez, sin tocar las 300 clases que hay. Subirlo al 17px es un +6%: poco,
+    pero se nota, y es lo que pedia el contenido del centro, que se leia pequeno.
+
+    NO afecta a los tamanos escritos en px (`text-[11px]`, los del sidebar): esos
+    no escalan y hay que subirlos a mano si se quieren acompanar. Son 8 en toda
+    la app.
+  */
+  html {
+    font-size: 17px;
+  }
+
   body {
     @apply text-foreground antialiased;
     font-family: "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont,

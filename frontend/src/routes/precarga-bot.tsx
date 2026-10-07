@@ -103,7 +103,7 @@ export default function PreCargaBot() {
           <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_50%_0%,rgba(37,99,235,0.35),transparent_62%)]" />
 
           <div className="mx-auto max-w-3xl">
-            <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-4 py-1.5 text-[13px] font-medium text-white">
+            <span className="inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-4 py-1.5 text-[14px] font-medium text-white">
               <Bot className="h-4 w-4 text-[#38bdf8]" />
               Aplicación de escritorio para Windows
             </span>
@@ -219,7 +219,7 @@ export default function PreCargaBot() {
                       <h3 className="text-lg font-bold text-white">
                         Versión {VERSION.numero}
                       </h3>
-                      <span className="rounded-full border border-amber-400/40 bg-amber-400/15 px-2 py-0.5 text-[11px] font-semibold text-amber-300">
+                      <span className="rounded-full border border-amber-400/40 bg-amber-400/15 px-2 py-0.5 text-[11.5px] font-semibold text-amber-300">
                         En pruebas
                       </span>
                     </div>

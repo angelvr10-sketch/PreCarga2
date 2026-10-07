@@ -55,7 +55,7 @@ export function Sidebar() {
 
   const renderContent = (ct: boolean, showCollapse: boolean) => {
     const baseClass = cn(
-      'group relative flex items-center gap-3 rounded-md text-[13.5px] font-normal',
+      'group relative flex items-center gap-3 rounded-md text-[14.5px] font-normal',
       'text-sidebar-foreground/85 transition-colors duration-100',
       'hover:bg-[rgb(255_255_255_/_0.06)] hover:text-sidebar-foreground',
       ct ? 'h-9 w-9 justify-center px-0' : 'px-3 py-1.5',
@@ -164,7 +164,7 @@ export function Sidebar() {
             }}
             title={ct ? 'Cerrar Sesión' : undefined}
             className={cn(
-              'h-auto rounded-md text-[13.5px] font-normal text-sidebar-foreground/85',
+              'h-auto rounded-md text-[14.5px] font-normal text-sidebar-foreground/85',
               'hover:bg-[rgb(255_255_255_/_0.06)] hover:text-sidebar-foreground',
               ct ? 'h-9 w-9 justify-center px-0' : 'w-full justify-start gap-3 px-3 py-1.5',
             )}
@@ -179,7 +179,7 @@ export function Sidebar() {
               onClick={toggle}
               aria-label={collapsed ? 'Expandir menú' : 'Colapsar menú'}
               className={cn(
-                'mt-1 flex items-center rounded-md text-[12px] text-sidebar-foreground/55',
+                'mt-1 flex items-center rounded-md text-[13px] text-sidebar-foreground/55',
                 'transition-colors hover:bg-[rgb(255_255_255_/_0.06)] hover:text-sidebar-foreground',
                 ct
                   ? 'h-8 w-8 justify-center mx-auto'
