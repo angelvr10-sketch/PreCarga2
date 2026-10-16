@@ -236,3 +236,117 @@ class TestPipelineCompleto:
         assert sum(s.por_compania.values()) == pax
         assert sum(s.por_transporte.values()) == pax
         assert s.total_mortera + s.total_viandas == pax
+
+
+# ── El concentrado de octubre, que hizo falta el lector por columnas ──
+
+CONCENTRADO = "ComandaAlimentos1410.pdf"
+
+pytestmark_oct = pytest.mark.skipif(
+    not (FIXTURES / CONCENTRADO).is_file(),
+    reason=f"Falta {CONCENTRADO} en {FIXTURES}",
+)
+
+
+@ pytestmark_oct
+class TestConcentradoOctubre:
+    """El reporte que motivo leer por columnas (`core/comandas/tabla.py`).
+
+    Este PDF trae dos cosas que el aplanado de texto destruye, y las dos estan
+    en el mismo archivo:
+
+      1. `pypdf` partio el `13` de OCT047 en `1 3`. El regex tomaba el `3` como
+         PAX y se perdian 10 personas: la suma daba 517 en vez de 527.
+      2. Al final de cada bloque hay una fila de SUBTOTAL (`62 62 00`) y al pie
+         un TOTAL. Al aplanar, esa fila se pegaba a la ultima comanda del
+         bloque y dos de sus numeros caian en la columna MENU 2: 121 de comida
+         que en el papel no existe.
+
+    El PDF dice `TOTAL= 527` en su ultima linea, y estos tests dicen lo mismo.
+    """
+
+    def _parse(self):
+        from core.comandas.parser import parse_pdf
+
+        return parse_pdf((FIXTURES / CONCENTRADO).read_bytes())
+
+    def test_el_total_es_el_del_pdf(self):
+        """El total de alimentos tiene que ser el 527 que trae el reporte."""
+        r = self._parse()
+
+        assert len(r.comandas) == 52
+        assert r.total_pax == 527
+
+    def test_total_alimentos_de_la_app(self):
+        """`total_alimentos` es lo que sale en pantalla: menu 1 + menu 2."""
+        from core.comandas.stats import calcular_estadisticas
+
+        s = calcular_estadisticas(self._parse().comandas)
+        assert s.total_alimentos == 527
+
+    def test_menu_2_debe_ser_cero(self):
+        """Ninguna fila del reporte trae comida en MENU 2.
+
+        Este es el que atrapa las filas de subtotal pegadas a la ultima comanda
+        del bloque: si vuelve a pasar, el total se infla sin que se vea.
+        """
+        from core.comandas.parser import parse_pdf
+        from core.comandas.stats import calcular_estadisticas
+
+        r = parse_pdf((FIXTURES / CONCENTRADO).read_bytes())
+        s = calcular_estadisticas(r.comandas)
+
+        assert s.total_menu2 == 0, [
+            f"{c.comanda}: menu_2={c.menu_2}" for c in r.comandas if c.menu_2
+        ]
+
+    def test_oct047_no_pierde_personas(self):
+        """La fila que `pypdf` parti: 13 personas, no 3."""
+        por_folio = {c.comanda: c for c in self._parse().comandas}
+
+        assert por_folio["OCT047"].pax == 13
+        assert por_folio["OCT047"].menu_1 == 13
+        # El `1` partido tampoco puede quedarse pegado al destino.
+        assert por_folio["OCT047"].destino == "ABKATUN-N1"
+
+    def test_las_agrupaciones_reproducen_el_total(self):
+        from core.comandas.stats import calcular_estadisticas
+
+        s = calcular_estadisticas(self._parse().comandas)
+
+        assert sum(s.por_destino.values()) == 527
+        assert sum(s.por_destino_grafico.values()) == 527
+        assert sum(s.por_compania.values()) == 527
+        assert sum(s.por_transporte.values()) == 527
+        assert s.total_mortera + s.total_viandas == 527
+
+    def test_fecha_y_titulo(self):
+        r = self._parse()
+        assert r.fecha_iso == "2026-10-14"
+        assert r.fecha_texto == "MIÉRCOLES, 14 DE OCTUBRE DE 2026"
+        assert r.titulo == "REFORMA PEMEX"
+
+    def test_no_advierte_folios_perdidos(self):
+        r = self._parse()
+        perdidas = [a for a in r.advertencias if "no se interpretaron" in a]
+        assert not perdidas, perdidas
+
+    def test_los_cuatro_reportos_dan_el_mismo_lector(self):
+        """Los cuatro concentrados comparten geometria: mismo total por columna.
+
+        Si la plataforma cambiara el layout, el lector por columnas empezaria a
+        sacar otra cosa y esta comparacion lo delata.
+        """
+        from core.comandas.tabla import leer_tabla
+
+        if not all((FIXTURES / a).is_file() for a in ARCHIVOS):
+            pytest.skip("faltan los otros concentrados")
+
+        for nombre, esperado in zip(ARCHIVOS, [295, 412, 449]):
+            filas = leer_tabla((FIXTURES / nombre).read_bytes())
+            assert sum(f.pax for f in filas) == esperado, nombre
+            assert sum(f.menu_2 for f in filas) == 0, nombre
+
+        filas = leer_tabla((FIXTURES / CONCENTRADO).read_bytes())
+        assert sum(f.pax for f in filas) == 527
+        assert sum(f.menu_2 for f in filas) == 0

@@ -29,6 +29,8 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from core.config import DIAS_FUTURO
+
 # Los dos barcos del dashboard. El orden fija el de las series y el de la leyenda.
 BARCOS = ("RPX", "CPZ")
 
@@ -47,6 +49,9 @@ BARCO_POR_USUARIO: dict[str, str] = {
 # Ventana maxima en dias, igual que `_agregar_ultimos_dias` de routers/api_data.py.
 # Las dos graficas comparten el selector de periodo, asi que tienen que aceptar lo
 # mismo o el dashboard mixes periodos.
+#
+# `DIAS_FUTURO` no se declara aqui: vive en core/config.py, junto a la
+# `_agregar_ultimos_dias` que tiene que recortar exactamente igual.
 DIAS_MAX = 365
 
 
@@ -61,15 +66,29 @@ def clasificar_barco(username: str | None) -> str | None:
 
 
 def ventana(dias: int, hoy: date | None = None) -> list[str]:
-    """Los `dias` dias que terminan HOY, en orden cronologico (mas viejo -> hoy).
+    """Los `dias` dias pedidos MAS `DIAS_FUTURO` dias hacia adelante, en orden
+    cronologico (mas viejo -> mas futuro).
 
-    Igual que `_agregar_ultimos_dias`: `range(dias - 1, -1, -1)`. Devuelve SIEMPRE
-    `dias` elementos, con ceros donde no hay datos, porque el eje X del grafico
-    tiene que alinearse con las dos series.
+    Termina `DIAS_FUTURO` dias DESPUES de hoy: la grafica no se corta justo en
+    el borde, sino que deja ver los proximos dias en cero. Con `dias=30` y
+    `DIAS_FUTURO=2` la ventana va de hace 29 dias a manana pasado: 32 fechas en
+    total, las 30 de historico intactas mas las 2 de anticipacion.
+
+    Se ALARGA la ventana en vez de recortar el historico. Recortar los 2 dias mas
+    recientes para meter los 2 futuros dejaria fuera justo los dias que el
+    usuario abre el dashboard a ver, que es lo unico que se agrega al final.
+
+    Devuelve SIEMPRE `dias + DIAS_FUTURO` elementos, con ceros donde no hay
+    datos, porque el eje X del grafico tiene que alinearse con las dos series.
     """
     dias = max(1, min(int(dias), DIAS_MAX))
     hoy = hoy or date.today()
-    return [(hoy - timedelta(days=i)).isoformat() for i in range(dias - 1, -1, -1)]
+    # Un solo rango en vez de unir dos listas: garantiza que no haya dia
+    # repetido ni hueco en la union, que es donde se desalinearia el eje X.
+    return [
+        (hoy + timedelta(days=i)).isoformat()
+        for i in range(-(dias - 1), DIAS_FUTURO + 1)
+    ]
 
 
 def serie_diaria(

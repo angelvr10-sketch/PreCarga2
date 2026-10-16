@@ -694,12 +694,16 @@ class TestSerieDeBarcos:
         c = cliente.get("/api/comandas/serie?dias=30").json()
         assert sum(c["rpx"]) + sum(c["cpz"]) + c["sin_asignar"] == c["total"]
 
-    def test_devuelve_tantos_dias_como_se_piden(self, cliente, almacen, descargas):
+    def test_devuelve_los_dias_pedidos_mas_la_anticipacion(self, cliente, almacen, descargas):
+        """El endpoint devuelve `dias + DIAS_FUTURO`: los 30 de historico intactos
+        mas 2 dias hacia adelante, que es lo que pidio el usuario para que el eje
+        X no se corte justo en hoy."""
+        from core.config import DIAS_FUTURO
         _sesion(cliente, USUARIO)
         for dias in (1, 7, 30, 365):
             c = cliente.get(f"/api/comandas/serie?dias={dias}").json()
-            assert len(c["dias"]) == dias
-            assert len(c["rpx"]) == len(c["cpz"]) == dias
+            assert len(c["dias"]) == dias + DIAS_FUTURO
+            assert len(c["rpx"]) == len(c["cpz"]) == dias + DIAS_FUTURO
 
     def test_el_uso_de_mayusculas_no_rompe_el_mapa(self, cliente, almacen, descargas):
         """`usuarios` tiene 'PabloDG' y 'LuisE'; `comandas.subido_por` guarda
@@ -722,11 +726,19 @@ class TestSerieDeBarcos:
         cliente.get("/api/comandas/serie?dias=30")
         assert descargas["contadas"] == 0
 
-    def test_el_ultimo_dia_de_la_serie_es_hoy(self, cliente, almacen, descargas):
+    def test_el_ultimo_dia_de_la_serie_es_dos_dias_adelante(self, cliente, almacen, descargas):
+        """La serie no termina hoy: termina dos dias despues, para que se vea el
+        espacio de lo que viene. Hoy tiene que seguir estando DENTRO de la
+        respuesta, no solo en las series."""
+        from datetime import date, timedelta
         from core.comandas.fecha import hoy_iso
+        from core.config import DIAS_FUTURO
         _sesion(cliente, USUARIO)
         c = cliente.get("/api/comandas/serie?dias=30").json()
-        assert c["dias"][-1] == hoy_iso()
+        hoy = hoy_iso()
+        esperado = (date.fromisoformat(hoy) + timedelta(days=DIAS_FUTURO)).isoformat()
+        assert c["dias"][-1] == esperado
+        assert hoy in c["dias"]
 
     def test_va_de_mas_viejo_a_hoy(self, cliente, almacen, descargas):
         _sesion(cliente, USUARIO)
@@ -740,10 +752,11 @@ class TestSerieDeBarcos:
         assert c["total"] == 5
 
     def test_la_serie_sigue_funcionando_sin_ninguna_comanda(self, cliente, almacen, descargas):
+        from core.config import DIAS_FUTURO
         _sesion(cliente, USUARIO)
         almacen.filas.clear()
         r = cliente.get("/api/comandas/serie?dias=30")
         assert r.status_code == 200
         c = r.json()
         assert c["total"] == 0 and c["sin_asignar"] == 0
-        assert c["rpx"] == [0] * 30
+        assert c["rpx"] == [0] * (30 + DIAS_FUTURO)

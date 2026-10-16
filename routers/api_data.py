@@ -17,7 +17,7 @@ from core.db import listar_bajas_db, listar_solicitudes_db
 from core.auth import get_user_from_token, listar_usuarios
 from core.catalogo import contiene_activo, invalidar_cache, obtener_nombre_compania_existe
 from core.comandas.repository import total_comandas
-from core.config import LOGS_DIR
+from core.config import LOGS_DIR, DIAS_FUTURO
 
 router = APIRouter(prefix="/api")
 
@@ -75,10 +75,23 @@ def dashboard_stats(request: Request):
 
 # ── Solicitudes list ───────────────────────────────────────────
 def _agregar_ultimos_dias(dias: int, barco: str = "") -> tuple:
-    """Agrega n_personas/n_bajas por destino (RPX/CPZ) por día en una ventana de `dias` días."""
+    """Agrega n_personas/n_bajas por destino (RPX/CPZ) por día en una ventana de `dias` días.
+
+    La ventana va `DIAS_FUTURO` días más allá de hoy: el eje X no se corta en el
+    borde, sino que deja ver los próximos días. El historico NO se recorta — con
+    30 días se siguen viendo los mismos 30 y se suman 2 al final. Es el mismo
+    recorte que `core/comandas/serie.py::ventana`, y tiene que serlo: las dos
+    graficas comparten el selector de periodo, asi que si una redondeara distinto
+    la comparación entre ellas sería falsa.
+    """
     dias = max(1, min(dias, 365))
     hoy = date.today()
-    fechas = [(hoy - timedelta(days=i)).isoformat() for i in range(dias - 1, -1, -1)]
+    # Un solo rango: unir dos listasinvariantemente deja un dia repetido o un
+    # hueco, que es donde se desalinearia el eje X de las cuatro series.
+    fechas = [
+        (hoy + timedelta(days=i)).isoformat()
+        for i in range(-(dias - 1), DIAS_FUTURO + 1)
+    ]
     mapa = {
         d: {
             "rpx": {"altas": 0, "bajas": 0},

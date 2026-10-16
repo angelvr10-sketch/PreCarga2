@@ -5,6 +5,7 @@ Port de la app de Streamlit (`comandas/app.py`) a logica pura, sin Streamlit y
 sin acceso directo a la base de datos. Se compone asi:
 
     fecha.py       Fechas en espanol, sin depender del locale del servidor.
+    tabla.py       Lee el concentrado por columnas (geometria del PDF).
     parser.py      Lee un PDF de comandas y devuelve datos. No escribe nada.
     stats.py       Agregaciones para el dashboard y el reporte estadistico.
     serie.py       Serie diaria por barco. El barco sale de un mapa de usuarios.
@@ -14,6 +15,10 @@ sin acceso directo a la base de datos. Se compone asi:
 La separacion es deliberada: `parser.py` y `pdf/` son funciones puras sobre
 bytes, y por eso se prueban sin base de datos, sin servidor y sin sesion. La
 autorizacion vive unicamente en `repository.py`.
+
+`tabla.py` es el unico que depende de `pdfplumber`: lo usa solo para leer las
+columnas del concentrado, que es donde `pypdf` pierde los numeros al aplanar. Si
+el PDF no trae esa tabla, `parser.py` degrada a texto plano y nada mas cambia.
 """
 
 from core.comandas.fecha import (

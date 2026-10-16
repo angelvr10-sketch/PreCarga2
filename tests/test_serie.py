@@ -17,6 +17,7 @@ from core.comandas.serie import (
     serie_diaria,
     ventana,
 )
+from core.config import DIAS_FUTURO
 
 HOY = date(2026, 10, 6)
 
@@ -77,37 +78,62 @@ class TestClasificarBarco:
 
 
 class TestVentana:
-    def test_termina_hoy_y_empieza_hace_dias_menos_uno(self):
+    def test_empieza_hace_dias_menos_uno_y_termina_dos_dias_adelante(self):
+        """La ventana se ALARGA hacia adelante, no se recorta el historico.
+
+        Con 30 dias y DIAS_FUTURO=2 son 32 fechas: de hace 29 dias a manana
+        pasado. El inicio es el mismo de siempre, que es lo que garantiza que
+        no se pierda ni un dia de historico al agregar los futuros.
+        """
         f = ventana(30, HOY)
-        assert len(f) == 30
-        assert f[-1] == "2026-10-06"
+        assert len(f) == 32
         assert f[0] == "2026-09-07"
+        assert f[-1] == "2026-10-08"
+
+    def test_hoy_esta_dentro_de_la_ventana_y_no_al_final(self):
+        """El dia de hoy tiene que seguir siendo un dato mas de la serie, en su
+        lugar: si quedara en el ultimo punto, la anticipacion no se veria."""
+        f = ventana(30, HOY)
+        assert HOY.isoformat() in f
+        assert f.index(HOY.isoformat()) == len(f) - 1 - DIAS_FUTURO
 
     def test_va_de_mas_viejo_a_mas_reciente(self):
         f = ventana(7, HOY)
         assert f == sorted(f)
         assert f[0] == "2026-09-30"
 
-    def test_siempre_devuelve_tantos_dias_como_se_piden(self):
+    def test_devuelve_los_dias_pedidos_mas_los_futuros(self):
         """El eje X del grafico alinea las dos series: si una viniera mas corta,
         la comparacion dia a dia estaria desfasada sin que se note."""
-        assert len(ventana(1, HOY)) == 1
-        assert len(ventana(365, HOY)) == 365
+        assert len(ventana(1, HOY)) == 1 + DIAS_FUTURO
+        assert len(ventana(30, HOY)) == 32
+        assert len(ventana(365, HOY)) == 365 + DIAS_FUTURO
 
     def test_cruza_el_cambio_de_ano(self):
         f = ventana(10, date(2026, 1, 3))
         assert f[0] == "2025-12-25"
-        assert f[-1] == "2026-01-03"
+        assert f[-1] == "2026-01-05"
 
     def test_cruza_el_bisiesto(self):
         f = ventana(3, date(2028, 3, 1))
-        assert f == ["2028-02-28", "2028-02-29", "2028-03-01"]
+        assert f == ["2028-02-28", "2028-02-29", "2028-03-01", "2028-03-02", "2028-03-03"]
 
-    @pytest.mark.parametrize("pedido,esperado", [(0, 1), (-5, 1), (400, 365)])
+    @pytest.mark.parametrize("pedido,esperado", [
+        (0, 1 + DIAS_FUTURO),
+        (-5, 1 + DIAS_FUTURO),
+        (400, 365 + DIAS_FUTURO),
+    ])
     def test_recorta_los_extremos(self, pedido, esperado):
         """El mismo recorte que `_agregar_ultimos_dias`, para que las dos graficas
         del dashboard compartan el selector de periodo sin romper."""
         assert len(ventana(pedido, HOY)) == esperado
+
+    def test_no_repite_ningun_dia(self):
+        """El rango se construye de una sola vez justamente para esto: unir dos
+        listas (historico + futuros) puede dejar un dia repetido en el punto de
+        union, que se veria como un salto en el eje X."""
+        f = ventana(30, HOY)
+        assert len(f) == len(set(f))
 
 
 class TestSerieDiaria:
@@ -122,13 +148,17 @@ class TestSerieDiaria:
             3,
             HOY,
         )
-        assert s["rpx"] == [0, 1, 2]
-        assert s["cpz"] == [0, 0, 1]
+        # 3 dias pedidos + DIAS_FUTURO de anticipacion, en cero.
+        assert s["rpx"] == [0, 1, 2] + [0] * DIAS_FUTURO
+        assert s["cpz"] == [0, 0, 1] + [0] * DIAS_FUTURO
 
-    def test_el_ultimo_dia_de_la_serie_es_hoy(self):
+    def test_el_ultimo_dia_de_la_serie_no_es_hoy_sino_dos_dias_adelante(self):
+        """La anticipacion es el punto de todo el cambio: el eje X no termina en
+        hoy, termina manana pasado."""
         s = serie_diaria([], 5, HOY)
-        assert s["dias"][-1] == "2026-10-06"
+        assert s["dias"][-1] == "2026-10-08"
         assert s["dias"][0] == "2026-10-02"
+        assert len(s["dias"]) == 5 + DIAS_FUTURO
 
     def test_las_tres_sumas_cuadran_con_el_total(self):
         """El invariante de la grafica: RPX + CPZ + sin_asignar = total.
@@ -168,8 +198,8 @@ class TestSerieDiaria:
         aparece como un hueco sin explicar.
         """
         s = serie_diaria([fila("admin", "2026-10-06")], 3, HOY)
-        assert s["rpx"] == [0, 0, 0]
-        assert s["cpz"] == [0, 0, 0]
+        assert s["rpx"] == [0, 0, 0] + [0] * DIAS_FUTURO
+        assert s["cpz"] == [0, 0, 0] + [0] * DIAS_FUTURO
         assert s["sin_asignar"] == 1
         assert s["total"] == 1
 
@@ -182,8 +212,8 @@ class TestSerieDiaria:
 
     def test_vacio_devuelve_ceros_y_no_none(self):
         s = serie_diaria([], 30, HOY)
-        assert s["rpx"] == [0] * 30
-        assert s["cpz"] == [0] * 30
+        assert s["rpx"] == [0] * (30 + DIAS_FUTURO)
+        assert s["cpz"] == [0] * (30 + DIAS_FUTURO)
         assert s["sin_asignar"] == 0
         assert s["total"] == 0
 
@@ -193,7 +223,7 @@ class TestSerieDiaria:
         s = serie_diaria(
             [{"fecha_registro": "2026-10-06T08:30:00", "subido_por": "erika"}], 3, HOY
         )
-        assert s["rpx"] == [0, 0, 1]
+        assert s["rpx"] == [0, 0, 1] + [0] * DIAS_FUTURO
 
     @pytest.mark.parametrize("basura", [
         {},
@@ -220,26 +250,51 @@ class TestSerieDiaria:
         )
         assert s["total"] == 2
         assert s["sin_asignar"] == 1
-        assert s["rpx"] == [0, 0, 1]
-        assert s["cpz"] == [0, 0, 0]
+        assert s["rpx"] == [0, 0, 1] + [0] * DIAS_FUTURO
+        assert s["cpz"] == [0] * (3 + DIAS_FUTURO)
 
     def test_el_mismo_dia_de_dos_usuarios_no_se_pisa(self):
         s = serie_diaria(
             [fila("erika", "2026-10-06"), fila("luise", "2026-10-06")], 1, HOY
         )
-        assert s["rpx"] == [1]
-        assert s["cpz"] == [1]
+        assert s["rpx"] == [1] + [0] * DIAS_FUTURO
+        assert s["cpz"] == [1] + [0] * DIAS_FUTURO
         assert s["total"] == 2
 
-    def test_la_ventana_no_mira_hacia_al_futuro(self):
-        """La ventana termina HOY, asi que una comanda de manana no se cuenta
-        todavia. Si alguien subiera un reporte con fecha futura, no debe entrar
-        en la serie de hoy ni ensuciar el total."""
+    def test_la_anticipacion_solo_llega_hasta_dos_dias(self):
+        """El cambio alarga la ventana, pero no la vuelve infinita.
+
+        Una comanda con fecha de manana SI entra, porque la anticipacion es
+        exactamente para eso: se ve actividad que ya se registro con fecha de
+        anticipacion. La de dentro de una semana NO, que caeria fuera de la
+        ventana y quedaria fuera del grafico igual que antes.
+        """
         s = serie_diaria(
-            [fila("erika", "2026-10-06"), fila("erika", "2026-10-20")], 7, HOY
+            [
+                fila("erika", "2026-10-07"),   # manana: dentro de la anticipacion
+                fila("erika", "2026-10-08"),   # manana pasado: el ultimo punto
+                fila("erika", "2026-10-09"),   # pasado manana: fuera
+                fila("erika", "2026-10-20"),   # muy lejos: fuera
+            ],
+            3,
+            HOY,
         )
-        assert s["total"] == 1
-        assert s["rpx"] == [0, 0, 0, 0, 0, 0, 1]
+        assert s["total"] == 2
+        assert s["rpx"] == [0, 0, 0, 1, 1]
+
+    def test_una_comanda_con_fecha_futura_no_ensucia_el_rango_historico(self):
+        """Lo que sigue contando de `test_la_ventana_no_mira_hacia_al_futuro`.
+
+        Antes la ventana terminaba en hoy y una comanda de manana no entraba.
+        Ahora entra SI, a proposito. Lo que no puede pasar es que se colara en
+        una posicion que rompa el eje: cada dia futuro cuenta en SU punto, no
+        desplazando los dias de historico.
+        """
+        s = serie_diaria([fila("erika", "2026-10-07")], 3, HOY)
+        assert s["dias"][-1] == "2026-10-08"
+        assert s["dias"][-2] == "2026-10-07"
+        assert s["rpx"][-2] == 1
+        assert s["rpx"][-1] == 0
 
 
 class TestContraLosDatosReales:
@@ -254,10 +309,13 @@ class TestContraLosDatosReales:
         # y erika (RPX) sigue; por eso en la ventana de 30 dias CPZ sale plano.
         assert BARCO_POR_USUARIO == {"erika": "RPX", "pablodg": "RPX", "luise": "CPZ"}
 
-    def test_la_ventana_de_30_dias_abarca_29_dias(self):
+    def test_la_ventana_de_30_dias_abarca_31(self):
+        """Los 30 dias de historico intactos, mas 2 de anticipacion: 32 puntos,
+        31 de separacion entre el primero y el ultimo."""
         s = ventana(30, date(2026, 10, 6))
-        assert timedelta(days=len(s) - 1).days == 29
-        assert s[-1] == "2026-10-06"
+        assert len(s) == 30 + DIAS_FUTURO
+        assert timedelta(days=len(s) - 1).days == 29 + DIAS_FUTURO
+        assert s[-1] == "2026-10-08"
 
 
 # ── Consistencia con el frontend ────────────────────────────────

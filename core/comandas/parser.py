@@ -14,6 +14,26 @@ Los unicos cambios respecto al original son:
   2. El merge con las comandas ya guardadas (que era estado de sesion) desaparece:
      la base de datos resuelve eso con `upsert`.
   3. La normalizacion de fecha pasa por `fecha.py`, sin `strftime("%B")`.
+  4. Las filas salen de `tabla.py`, que lee por columnas. Ver abajo.
+
+── COMO SE LEEN LAS FILAS (2026-10-14) ─────────────────────────────────────
+
+El original aplana el texto del PDF a una sola linea y le pasa un regex. Eso
+funciona mientras los numeros del reporte no se rompan al aplanar, y en el
+concentrado del 14-10-2026 se rompieron: `pypdf` partio un `13` en `1 3`, y la
+suma de PAX salio 517 en vez de 527. Ademas las filas de subtotal de cada
+bloque quedaron pegadas a la ultima fila de datos, con dos de sus numeros
+dentro de la columna MENU 2: 121 de comida que en el papel no existe.
+
+Por eso `parse_pdf` lee PRIMERO con `tabla.py`, que no aplana y decide cada
+numero por la coordenada X de la columna que le toca. El camino de texto plano
+sigue intacto y es la red de seguridad: se usa cuando el PDF no trae la tabla
+(machotes de una sola comanda, que es lo que genera este mismo modulo) o cuando
+`pdfplumber` no reconoce el layout.
+
+`comandas_del_texto`, `observaciones_por_folio` y `titulo_del_pdf` NO cambiaron:
+siguen siendo funciones puras sobre texto plano, con sus regex y su contrato.
+Lo unico que cambio es de donde saca las filas `parse_pdf`.
 """
 
 from __future__ import annotations
@@ -25,6 +45,7 @@ from datetime import datetime
 
 from pypdf import PdfReader
 
+from core.comandas import tabla
 from core.comandas.fecha import resolver_fecha_operacion, texto_fecha_del_pdf
 
 
@@ -254,6 +275,56 @@ def comandas_del_texto(texto: str) -> list[Comanda]:
     return list(por_folio.values())
 
 
+# ── Lectura por columnas (camino principal) ─────────────────────
+
+def _comanda_de_fila(f: tabla.Fila, observaciones: str) -> Comanda:
+    """Un `Comanda` desde una fila leida por columnas.
+
+    Aplica las mismas reglas que la lectura por texto, en el mismo orden:
+
+      - `menu_1 = pax`. No es un descuido: hay reportes donde PAX y MENU 1 no
+        coinciden (JUL026 trae 125 contra 126) y el conteo de comida sale de
+        las personas, no de lo que diga la columna de menu.
+      - `tipo = MORTERA` si la observacion lo dice. "COMIDA-MORTERA" y
+        "INCLUIR EN LA MORTERA DE 73PAX" cuentan igual: las dos son la misma
+        instruccion escrita de dos formas.
+
+    Las observaciones NO salen de la tabla: las pasa el camino de texto, que
+    tambien las resuelve. Ver "LO QUE ESTE MODULO NO LEE" en `tabla.py`.
+    """
+    return Comanda(
+        comanda=f.folio,
+        horario=f.horario,
+        compania=f.compania,
+        destino=f.destino,
+        pax=f.pax,
+        transporte=f.transporte,
+        menu_1=f.pax,
+        menu_2=f.menu_2,
+        tipo='MORTERA' if 'MORTERA' in observaciones.upper() else 'VIANDA',
+        observaciones=observaciones,
+    )
+
+
+def _destinos_fuera_de_la_lista(comandas: list[Comanda]) -> list[str]:
+    """Destinos que `DESTINO_PATTERN` no reconoce, ordenados y sin repetir.
+
+    Antes esto no hacia falta: el regex usaba la lista de destinos como
+    delimitador, asi que un destino fuera de la lista hacia perder su fila en
+    silencio. Leyendo por columnas la fila sale igual, porque el destino ya no
+    hay que adivinarlo. La lista pasa a ser lo que siempre quiso ser: una lista
+    de control, para enterarse de que la plataforma destino se nuevo.
+    """
+    hayados = set()
+    for c in comandas:
+        destino = c.destino.strip()
+        if not destino:
+            continue
+        if not re.fullmatch(rf"{DESTINO_PATTERN}", destino):
+            hayados.add(destino)
+    return sorted(hayados)
+
+
 # ── Punto de entrada ───────────────────────────────────────────
 
 def parse_pdf(file_bytes: bytes) -> ResultadoParse:
@@ -261,12 +332,29 @@ def parse_pdf(file_bytes: bytes) -> ResultadoParse:
 
     Lanza `ErrorProcesandoPDF` si el archivo no se puede leer o si no sale
     ninguna comanda. No escribe nada en la base de datos.
+
+    Las filas salen de `tabla.leer_tabla` (columnas) cuando el PDF es un
+    concentrado de la plataforma. Si no lo es, o si el layout no se reconoce,
+    cae a `comandas_del_texto`, que es el camino de siempre.
     """
     texto = texto_del_pdf(file_bytes)
 
     fecha_iso, fecha_texto = resolver_fecha_operacion(texto)
     titulo = titulo_del_pdf(texto)
-    comandas = comandas_del_texto(texto)
+
+    filas = _filas_de_tabla(file_bytes)
+    if filas:
+        # Las observaciones salen del texto plano, igual que siempre. Ver
+        # "LO QUE ESTE MODULO NO LEE" en tabla.py: la geometria de esa columna
+        # no se puede reconstruir de forma fiable.
+        observaciones = observaciones_por_folio(texto)
+        comandas = [_comanda_de_fila(f, observaciones.get(f.folio, ''))
+                    for f in filas]
+        # Un folio repetido se conserva una sola vez, en su ultima aparicion:
+        # el PDF mas reciente manda. Es la misma regla del camino de texto.
+        comandas = list({c.comanda: c for c in comandas}.values())
+    else:
+        comandas = comandas_del_texto(texto)
 
     if not comandas:
         raise ErrorProcesandoPDF(
@@ -284,6 +372,20 @@ def parse_pdf(file_bytes: bytes) -> ResultadoParse:
         titulo=titulo,
         advertencias=advertencias,
     )
+
+
+def _filas_de_tabla(file_bytes: bytes) -> list[tabla.Fila]:
+    """Las filas del concentrado, o una lista vacia si este PDF no lo es.
+
+    Degrada en silencio a proposito: que `pdfplumber` no encuentre la tabla no es
+    un error de este modulo, es la senal de que toca el camino de texto plano.
+    Un `ErrorTabla` aqui significa "no conozco este layout", no "el archivo esta
+    roto": el error visible lo produce despues `texto_del_pdf`.
+    """
+    try:
+        return tabla.leer_tabla(file_bytes)
+    except tabla.ErrorTabla:
+        return []
 
 
 def _advertencias(texto: str, comandas: list[Comanda]) -> list[str]:
@@ -310,6 +412,16 @@ def _advertencias(texto: str, comandas: list[Comanda]) -> list[str]:
     if not texto_fecha_del_pdf(texto):
         avisos.append(
             "El PDF no trae fecha en el encabezado; se guardo con la fecha de hoy."
+        )
+
+    # Destinos que la lista cerrada no conoce. No son un error: la fila se leyo
+    # bien. Es la aviso de que la plataforma empezo a usar un destino nuevo y que
+    # `DESTINO_PATTERN` deberia incluirlo.
+    for destino in _destinos_fuera_de_la_lista(comandas)[:5]:
+        avisos.append(
+            f"El destino '{destino}' no esta en la lista de destinos "
+            f"reconocidos. Sus comandas se guardaron igual, pero conviene "
+            f"agregarlo a DESTINO_PATTERN en core/comandas/parser.py."
         )
 
     return avisos

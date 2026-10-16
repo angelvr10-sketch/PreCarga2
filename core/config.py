@@ -12,6 +12,28 @@ RUTA_PLANTILLA        = LIB_DIR / "plantilla.xlsx"
 RUTA_PLANTILLA_SALIDA = LIB_DIR / "salida.xlsx"
 RUTA_PLANTILLA_ENTRADA= LIB_DIR / "entrada.xlsx"
 
+# ────────────────────────────────────────────────────────────────
+#  Ventana de las gráficas del dashboard
+# ────────────────────────────────────────────────────────────────
+# Dias que las graficas muestran POR DELANTE de hoy, ademas del periodo pedido.
+#
+# Vive aqui, y no duplicado en cada ventana, porque las graficas del dashboard
+# comparten el mismo selector de periodo: `core/comandas/serie.py::ventana` (la
+# de Comandas por barco) y `routers/api_data.py::_agregar_ultimos_dias` (Altas vs
+# Bajas y las barras RPX/CPZ). Si cada una redondeara por su cuenta, el mismo
+# selector acabaria moviendo dos ventanas distintas y la comparacion entre
+# graficas seria falsa, que es justo lo que `tests/test_serie.py` vigila.
+#
+# Por que dias hacia adelante y no recortar el historico: la ventana se ALARGA.
+# Con 30 dias se siguen viendo los mismos 30 dias de historia y se suman 2 al
+# final. Recortar en vez de alargar dejaria fuera los 2 dias mas recientes, que
+# es informacion que hoy si se ve.
+#
+# Los dias futuros salen en cero: `solicitudes.fecha_llegada` y
+# `comandas.fecha_registro` nunca estan en el futuro, asi que no inventan datos,
+# solo reservan el espacio del eje X donde caera la actividad de mañana.
+DIAS_FUTURO = 2
+
 # `companias.csv` y `activos.csv` se dejaron de usar el 2026-10-07: la UI escribe
 # en Supabase y el procesador leia el CSV, asi que cualquier alta desde la app era
 # invisible. Ahora los dos catalogos salen de la base (ver core/catalogo.py).
