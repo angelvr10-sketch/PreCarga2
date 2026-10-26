@@ -517,6 +517,9 @@ def _enviar_brevo_smtp(to: str, subject: str, body: str) -> bool:
         return False
     except Exception as e:
         print(f"[EMAIL] Brevo SMTP fallo: {type(e).__name__}: {e}")
+        if isinstance(e, TimeoutError):
+            print("[EMAIL] Render free bloquea los puertos SMTP (25/465/587). "
+                  "Configura BREVO_API_KEY para enviar por HTTPS.")
         return False
 
 
@@ -589,50 +592,63 @@ def _enviar_brevo(to: str, subject: str, body: str) -> bool:
 def enviar_email(to: str, subject: str, body: str) -> bool:
     """Envia un email transaccional por el proveedor que este configurado.
 
-    Se elige solo: si hay BREVO_API_KEY se usa Brevo, si no, Resend. No hace
-    falta variable extra para elegir, y asi queda claro en los logs cual de los
-    dos esta activo.
+    Se priorizan las APIs HTTP (puerto 443) sobre SMTP porque Render free
+    bloquea los puertos 25, 465 y 587: el SMTP local funciona, pero en
+    produccion se queda en TimeoutError. Si un proveedor configurado falla,
+    se intenta el siguiente antes de rendirse.
 
-    Los dos proveedores devuelven 401 con una clave invalida, pero el mensaje
-    no siempre lo aclara; por eso cada rama loguea remitente y respuesta, que
-    es lo primero que hay que mirar cuando "el registro no funciona".
+    Los proveedores devuelven 401 con una clave invalida, pero el mensaje no
+    siempre lo aclara; por eso cada rama loguea remitente y respuesta, que es
+    lo primero que hay que mirar cuando "el registro no funciona".
     """
-    # Gmail propio: no requiere cuenta en ningun proveedor ni dominio, asi que
-    # es la salida cuando todavia no se puede verificar la cuenta de Brevo.
-    if GMAIL_USER and GMAIL_APP_PASSWORD:
-        return _enviar_gmail(to, subject, body)
+    configurado = False
 
-    # Orden de preferencia: SMTP de Brevo, luego API de Brevo, luego Resend.
-    # Se prueba SMTP primero porque su login se ve siempre en el panel y la
-    # SMTP key se revela con un clic, mientras la API key solo se muestra una vez.
-    if BREVO_SMTP_LOGIN and BREVO_SMTP_PASSWORD:
-        if not BREVO_SENDER_EMAIL:
-            print("[EMAIL] falta BREVO_SENDER_EMAIL: no se puede construir el remitente.")
-            return False
-        return _enviar_brevo_smtp(to, subject, body)
-
+    # 1. Brevo por API (HTTPS). Es la via que funciona en Render free.
     if BREVO_API_KEY:
+        configurado = True
         if not BREVO_SENDER_EMAIL:
             print("[EMAIL] BREVO_API_KEY esta puesto pero falta BREVO_SENDER_EMAIL.")
-            return False
-        if not HAS_HTTPX:
+        elif not HAS_HTTPX:
             print("[EMAIL] httpx no instalado. Ejecuta: pip install httpx")
-            return False
-        try:
-            return _enviar_brevo(to, subject, body)
-        except Exception as e:
-            print(f"[EMAIL] error inesperado con Brevo: {e}")
-            return False
+        else:
+            try:
+                if _enviar_brevo(to, subject, body):
+                    return True
+            except Exception as e:
+                print(f"[EMAIL] error inesperado con Brevo API: {e}")
+            print("[EMAIL] Brevo API fallo; se prueban otros proveedores.")
 
+    # 2. Resend por API (HTTPS).
     if RESEND_API_KEY:
+        configurado = True
         if not HAS_HTTPX:
             print("[EMAIL] httpx no instalado. Ejecuta: pip install httpx")
-            return False
-        try:
-            return _enviar_resend(to, subject, body)
-        except Exception as e:
-            print(f"[EMAIL] error inesperado con Resend: {e}")
-            return False
+        else:
+            try:
+                if _enviar_resend(to, subject, body):
+                    return True
+            except Exception as e:
+                print(f"[EMAIL] error inesperado con Resend: {e}")
+            print("[EMAIL] Resend fallo; se prueban otros proveedores.")
+
+    # 3. Gmail propio. Util en local, pero tambien usa SMTP.
+    if GMAIL_USER and GMAIL_APP_PASSWORD:
+        configurado = True
+        if _enviar_gmail(to, subject, body):
+            return True
+        print("[EMAIL] Gmail fallo; se prueban otros proveedores.")
+
+    # 4. Brevo por SMTP. Solo sirve si el host no bloquea esos puertos.
+    if BREVO_SMTP_LOGIN and BREVO_SMTP_PASSWORD:
+        configurado = True
+        if not BREVO_SENDER_EMAIL:
+            print("[EMAIL] falta BREVO_SENDER_EMAIL: no se puede construir el remitente.")
+        elif _enviar_brevo_smtp(to, subject, body):
+            return True
+
+    if configurado:
+        print("[EMAIL] Ningun proveedor pudo enviar el correo.")
+        return False
 
     return _email_desarrollo(to, subject, body)
 
