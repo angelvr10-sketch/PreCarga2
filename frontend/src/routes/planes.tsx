@@ -25,8 +25,8 @@ export default function Planes() {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold tracking-tight">Planes de Suscripción</h1>
-        <div className="grid gap-6 md:grid-cols-3">
-          {[1, 2, 3].map((i) => (
+        <div className="grid gap-6 md:grid-cols-2 lg:max-w-4xl">
+          {[1, 2].map((i) => (
             <Card key={i}>
               <CardHeader>
                 <div className="h-6 w-24 animate-pulse rounded bg-muted" />
@@ -76,7 +76,7 @@ export default function Planes() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold tracking-tight">Planes de Suscripción</h1>
 
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 lg:max-w-4xl">
         {planes.map((plan) => (
           <Card key={plan.id} className="flex flex-col">
             <CardHeader>
@@ -89,7 +89,9 @@ export default function Planes() {
                 </p>
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Download className="h-4 w-4" />
-                  {plan.descargas} descargas incluidas
+                  {plan.descargas >= 999999
+                    ? 'Descargas ilimitadas'
+                    : `${plan.descargas} descargas incluidas`}
                 </p>
               </div>
               <Button

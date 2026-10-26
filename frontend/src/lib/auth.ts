@@ -17,6 +17,21 @@ export const authApi = {
   verify: (email: string, codigo: string) =>
     api.post<AuthResponse>('/api/auth/verify', { email, codigo }),
 
+  resendCode: (email: string) =>
+    api.post<AuthResponse>('/api/auth/resend-code', { email }),
+
+  changePassword: (actual: string, nueva: string) =>
+    api.post<AuthResponse>('/api/auth/change-password', { actual, nueva }),
+
+  updateProfile: (datos: { nombre?: string; email?: string; actual?: string }) =>
+    api.patch<AuthResponse>('/api/auth/profile', datos),
+
+  forgotPassword: (email: string) =>
+    api.post<AuthResponse>('/api/auth/forgot-password', { email }),
+
+  resetPassword: (email: string, codigo: string, nueva: string) =>
+    api.post<AuthResponse>('/api/auth/reset-password', { email, codigo, nueva }),
+
   logout: () => api.post<{ ok: boolean }>('/api/auth/logout'),
 
   me: () => api.get<{ user: Usuario }>('/api/auth/me'),

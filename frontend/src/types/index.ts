@@ -14,6 +14,14 @@ export interface Usuario {
   rol: string
   verificado: boolean
   created_at: string
+  /** Presentes en el listado de administración y en /api/auth/me. */
+  activo?: boolean
+  expira?: string | null
+  suscripcion_vigente?: boolean
+  dias_restantes?: number
+  descargas_usadas?: number
+  descargas_gratis_total?: number
+  descargas_gratis_restantes?: number
 }
 
 export interface Solicitud {

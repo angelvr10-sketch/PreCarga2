@@ -42,7 +42,9 @@ const PreCargaBot = lazy(() => import('@/routes/precarga-bot'))
 const Login = lazy(() => import('@/routes/login'))
 const Registro = lazy(() => import('@/routes/registro'))
 const Verificar = lazy(() => import('@/routes/verificar'))
+const Recuperar = lazy(() => import('@/routes/recuperar'))
 const Dashboard = lazy(() => import('@/routes/dashboard'))
+const Cuenta = lazy(() => import('@/routes/cuenta'))
 const Procesar = lazy(() => import('@/routes/procesar'))
 const Altas = lazy(() => import('@/routes/altas'))
 const Bajas = lazy(() => import('@/routes/bajas'))
@@ -108,10 +110,22 @@ const verificarRoute = createRoute({
   component: () => <LazyRoute component={Verificar} />,
 })
 
+const recuperarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/recuperar',
+  component: () => <LazyRoute component={Recuperar} />,
+})
+
 const dashboardRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/dashboard',
   component: () => <LazyRoute component={Dashboard} />,
+})
+
+const cuentaRoute = createRoute({
+  getParentRoute: () => protectedLayout,
+  path: '/cuenta',
+  component: () => <LazyRoute component={Cuenta} />,
 })
 
 const procesarRoute = createRoute({
@@ -154,6 +168,13 @@ const adminUsuariosRoute = createRoute({
   getParentRoute: () => protectedLayout,
   path: '/admin/usuarios',
   component: () => <LazyRoute component={AdminUsuarios} />,
+  beforeLoad: async ({ context }) => {
+    // protectedLayout ya espero a auth y exige sesion; aqui ademas se exige
+    // rol admin. Sin esto, un usuario normal entraba a la pantalla y solo
+    // veia un error 403 confuso.
+    await context.auth.whenReady()
+    if (!context.auth.user?.admin) throw redirect({ to: '/dashboard' })
+  },
 })
 
 const planesRoute = createRoute({
@@ -195,8 +216,10 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   registroRoute,
   verificarRoute,
+  recuperarRoute,
   protectedLayout.addChildren([
     dashboardRoute,
+    cuentaRoute,
     procesarRoute,
     altasRoute,
     bajasRoute,

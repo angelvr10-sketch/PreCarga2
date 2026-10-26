@@ -1,5 +1,6 @@
 """core/auth.py — Usuarios, sesiones y suscripciones con Supabase"""
 import bcrypt
+import hashlib
 import secrets
 import os
 import random
@@ -12,7 +13,7 @@ from fastapi import Request
 from fastapi.responses import RedirectResponse
 
 from core.supabase_db import (
-    _get, _post, _delete, _patch, verificar_conexion, _now,
+    _get, _get_all, _post, _delete, _patch, verificar_conexion, _now,
     SUPABASE_URL, KEY_TIPO,
     HAS_HTTPX, httpx
 )
@@ -68,6 +69,18 @@ VENTANA_RATE_LIMIT_HORAS = 24
 
 # Validacion de email
 EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+
+# Recuperacion de contrasena. Se reutiliza `verificaciones_pendientes`, que ya
+# guarda codigos temporales de 6 digitos, con un marcador en `username` para
+# distinguir un reset de un registro. Las dos operaciones son mutuamente
+# excluyentes por email: un reset solo aplica a una cuenta existente y un
+# registro solo a un email que aun no existe.
+RESET_MARKER = "__reset_password__"
+RESET_MINUTOS_EXPIRA = 30
+RESET_SEGUNDOS_ESPERA = 60
+RESET_MAX_SOLICITUDES_HORA = 5
+RESET_MAX_INTENTOS = 10
+RESEND_MAX_POR_HORA = 3
 
 
 # ──────────────────────────────────────────────────────────────
@@ -210,6 +223,41 @@ def logout(token: str):
     _delete("sesiones", {"token": f"eq.{token}"})
 
 
+def cambiar_password(usuario_id, actual: str, nueva: str) -> tuple[bool, str]:
+    """Cambia la contrasena del propio usuario.
+
+    Devuelve (ok, token_nuevo | mensaje_de_error). Al cambiarla se cierran
+    TODAS las sesiones del usuario, incluidas otras pestanas o dispositivos,
+    y se emite un token nuevo para la sesion desde la que se hizo el cambio.
+    Asi una contrasena filtrada deja de servir de inmediato.
+    """
+    if len(nueva) < 6:
+        return False, "La nueva contrasena debe tener al menos 6 caracteres"
+    if len(nueva) > 128:
+        return False, "La nueva contrasena es demasiado larga"
+
+    rows = _get("usuarios", filters={"id": f"eq.{usuario_id}"}, select="password")
+    if not rows:
+        return False, "Usuario no encontrado"
+
+    hash_actual = rows[0].get("password") or ""
+    if not _verify_password(actual, hash_actual):
+        return False, "La contrasena actual no es correcta"
+    if _verify_password(nueva, hash_actual):
+        return False, "La nueva contrasena debe ser diferente a la actual"
+
+    try:
+        _patch("usuarios", {"password": _hash(nueva)}, {"id": f"eq.{usuario_id}"})
+        _delete("sesiones", {"usuario_id": f"eq.{usuario_id}"})
+
+        token = _token()
+        expira = (datetime.now(timezone.utc) + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+        _post("sesiones", {"token": token, "usuario_id": usuario_id, "expira": expira})
+        return True, token
+    except Exception as e:
+        return False, f"Error cambiando la contrasena: {e}"
+
+
 def get_user_from_token(token: Optional[str]) -> Optional[dict]:
     """Devuelve dict del usuario o None si el token es invalido/expirado."""
     if not token:
@@ -235,6 +283,12 @@ def get_user_from_token(token: Optional[str]) -> Optional[dict]:
         return None
 
     user = rows[0]
+
+    # Un usuario desactivado pierde la sesion en la siguiente peticion. Antes
+    # `activo` solo se revisaba al hacer login, asi que desactivar a alguien
+    # no lo sacaba: seguia entrando con el token que ya tenia en la cookie.
+    if not user.get("activo", True):
+        return None
 
     # Obtener fecha de expiracion
     sus = _get("suscripciones", filters={"usuario_id": f"eq.{uid}"},
@@ -342,6 +396,51 @@ def _registrar_intento(ip: str):
         })
     except Exception:
         pass  # No bloquear registro por error de rate limiting
+
+
+def _clave_evento(clave: str) -> str:
+    """Ajusta la clave al ancho de `rate_limit_registros.ip` (VARCHAR(45)).
+
+    Las claves con prefijo ("reset-verify:<ipv6>", "resend:<email>") pueden
+    superar 45 caracteres. PostgREST rechaza el INSERT con "value too long",
+    y como `_registrar_evento` traga la excepcion, el limite se apagaba en
+    silencio para IPv6 y correos largos. Se guarda un hash estable en esos
+    casos; el conteo usa la misma transformacion, asi que sigue cuadrando.
+    """
+    if len(clave) <= 45:
+        return clave
+    return "h:" + hashlib.sha256(clave.encode("utf-8")).hexdigest()[:43]
+
+
+def _registrar_evento(clave: str):
+    """Registra un evento de rate limit con una clave propia.
+
+    `rate_limit_registros` solo tiene `ip` y `creado`, asi que se usan claves
+    con prefijo ("reset-req:1.2.3.4") para no mezclar estos conteos con los
+    del registro normal, que consulta la IP exacta.
+    """
+    clave = _clave_evento(clave)
+    try:
+        _delete("rate_limit_registros", {
+            "ip": f"eq.{clave}",
+            "creado": f"lt.{(datetime.now(timezone.utc) - timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')}",
+        })
+        _post("rate_limit_registros", {"ip": clave, "creado": _now()})
+    except Exception:
+        pass
+
+
+def _contar_eventos(clave: str, horas: int = 1) -> int:
+    clave = _clave_evento(clave)
+    desde = (datetime.now(timezone.utc) - timedelta(hours=horas)).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        rows = _get("rate_limit_registros", filters={
+            "ip": f"eq.{clave}",
+            "creado": f"gte.{desde}",
+        })
+        return len(rows)
+    except Exception:
+        return 0
 
 
 # ──────────────────────────────────────────────────────────────
@@ -558,6 +657,181 @@ Precarga
     return enviar_email(email, subject, body)
 
 
+def enviar_codigo_recuperacion(email: str, codigo: str) -> bool:
+    """Envia el código para restablecer la contraseña."""
+    subject = "Restablecer contraseña - Precarga"
+    body = f"""
+Hola,
+
+Recibimos una solicitud para restablecer la contraseña de tu cuenta.
+
+Tu código de recuperación es:
+
+    {codigo}
+
+Este código expira en {RESET_MINUTOS_EXPIRA} minutos y solo puede usarse una vez.
+
+Si no solicitaste este cambio, ignora este mensaje: tu contraseña actual
+seguirá funcionando.
+
+---
+Precarga
+"""
+    return enviar_email(email, subject, body)
+
+
+# ──────────────────────────────────────────────────────────────
+#  Recuperacion de contrasena
+# ──────────────────────────────────────────────────────────────
+
+def solicitar_recuperacion(email: str, ip: str) -> tuple[bool, str]:
+    """Envia (o simula enviar) un codigo de recuperacion.
+
+    Responde SIEMPRE lo mismo exista o no la cuenta, para que el endpoint no
+    sirva para averiguar que correos estan registrados. Los fallos de envio
+    se loguean en el servidor, no se devuelven al cliente.
+    """
+    email_norm = (email or "").strip().lower()
+    if not EMAIL_REGEX.match(email_norm):
+        return False, "El correo no tiene un formato válido"
+
+    generico = (
+        "Si el correo está registrado, enviamos un código para restablecer la contraseña. "
+        "Revisa tu bandeja de entrada y la carpeta de spam."
+    )
+
+    clave_ip = f"reset-req:{ip}"
+    if _contar_eventos(clave_ip) >= RESET_MAX_SOLICITUDES_HORA:
+        return True, generico
+    _registrar_evento(clave_ip)
+
+    try:
+        usuarios = _get("usuarios", filters={"email": f"eq.{email_norm}"},
+                        select="id,username,activo")
+    except Exception as e:
+        print(f"[RESET] error consultando usuario: {e}")
+        return True, generico
+
+    if not usuarios or not usuarios[0].get("activo", True):
+        return True, generico
+
+    user = usuarios[0]
+
+    # Evita que un doble clic mande dos correos y gaste cuota del proveedor.
+    try:
+        pendiente = _get("verificaciones_pendientes",
+                         filters={"email": f"eq.{email_norm}"})
+        if pendiente and pendiente[0].get("creado"):
+            try:
+                creado = datetime.fromisoformat(
+                    str(pendiente[0]["creado"]).replace("Z", "+00:00")
+                )
+                if creado.tzinfo is None:
+                    creado = creado.replace(tzinfo=timezone.utc)
+                if (datetime.now(timezone.utc) - creado).total_seconds() < RESET_SEGUNDOS_ESPERA:
+                    return True, generico
+            except (TypeError, ValueError):
+                pass
+    except Exception:
+        pendiente = []
+
+    codigo = _codigo_verificacion()
+    expira = (datetime.now(timezone.utc) + timedelta(minutes=RESET_MINUTOS_EXPIRA)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    fila = {
+        "email": email_norm,
+        "username": RESET_MARKER,
+        "password_hash": "",
+        "codigo": codigo,
+        "expira": expira,
+        "ip": ip,
+        "creado": _now(),
+    }
+
+    try:
+        if pendiente:
+            _patch("verificaciones_pendientes", fila, {"email": f"eq.{email_norm}"})
+        else:
+            _post("verificaciones_pendientes", fila)
+    except Exception as e:
+        print(f"[RESET] no se pudo guardar el código: {e}")
+        return True, generico
+
+    if not enviar_codigo_recuperacion(email_norm, codigo):
+        # Si el proveedor falla, se borra el código para no dejar uno valido
+        # que el usuario no recibio. El cliente ve el mensaje generico igual.
+        try:
+            _delete("verificaciones_pendientes", {"email": f"eq.{email_norm}"})
+        except Exception:
+            pass
+
+    return True, generico
+
+
+def restablecer_password(email: str, codigo: str, nueva: str, ip: str) -> tuple[bool, str]:
+    """Valida el codigo y cambia la contraseña. Cierra todas las sesiones."""
+    email_norm = (email or "").strip().lower()
+    codigo_norm = (codigo or "").strip()
+
+    if len(nueva) < 6:
+        return False, "La nueva contraseña debe tener al menos 6 caracteres"
+    if len(nueva) > 128:
+        return False, "La nueva contraseña es demasiado larga"
+
+    clave_intentos = f"reset-verify:{ip}"
+    if _contar_eventos(clave_intentos) >= RESET_MAX_INTENTOS:
+        return False, "Demasiados intentos. Solicita un código nuevo más tarde."
+
+    try:
+        pendientes = _get("verificaciones_pendientes",
+                          filters={"email": f"eq.{email_norm}"},
+                          order="creado.desc", limit=1)
+    except Exception as e:
+        print(f"[RESET] error leyendo código: {e}")
+        return False, "No se pudo validar el código. Intenta de nuevo."
+
+    if not pendientes or pendientes[0].get("username") != RESET_MARKER:
+        _registrar_evento(clave_intentos)
+        return False, "El código es incorrecto o expiró. Solicita uno nuevo."
+
+    fila = pendientes[0]
+
+    expira_str = str(fila.get("expira") or "").replace("Z", "+00:00")
+    try:
+        expira = datetime.fromisoformat(expira_str)
+        if expira.tzinfo is None:
+            expira = expira.replace(tzinfo=timezone.utc)
+    except ValueError:
+        expira = datetime.now(timezone.utc)
+
+    if datetime.now(timezone.utc) > expira:
+        _delete("verificaciones_pendientes", {"id": f"eq.{fila['id']}"})
+        return False, "El código expiró. Solicita uno nuevo."
+
+    if not secrets.compare_digest(str(fila.get("codigo") or ""), codigo_norm):
+        _registrar_evento(clave_intentos)
+        return False, "El código es incorrecto o expiró. Solicita uno nuevo."
+
+    usuarios = _get("usuarios", filters={"email": f"eq.{email_norm}"},
+                    select="id,activo")
+    if not usuarios or not usuarios[0].get("activo", True):
+        _delete("verificaciones_pendientes", {"id": f"eq.{fila['id']}"})
+        return False, "No se pudo restablecer la contraseña. Contacta al administrador."
+
+    uid = usuarios[0]["id"]
+    try:
+        _patch("usuarios", {"password": _hash(nueva)}, {"id": f"eq.{uid}"})
+        # Todas las sesiones, incluidas las de otros dispositivos.
+        _delete("sesiones", {"usuario_id": f"eq.{uid}"})
+        _delete("verificaciones_pendientes", {"id": f"eq.{fila['id']}"})
+    except Exception as e:
+        print(f"[RESET] error actualizando la contraseña: {e}")
+        return False, "No se pudo restablecer la contraseña. Intenta de nuevo."
+
+    return True, "Contraseña actualizada. Ya puedes iniciar sesión."
+
+
 # ──────────────────────────────────────────────────────────────
 #  Registro con verificación por email
 # ──────────────────────────────────────────────────────────────
@@ -650,6 +924,12 @@ def verificar_codigo_y_crear_cuenta(email: str, codigo: str) -> tuple[bool, str]
 
         ver = pendiente[0]
 
+        # Un codigo de recuperacion vive en la misma tabla (ver RESET_MARKER).
+        # Si alguien lo escribe en la pantalla de verificacion de registro, no
+        # debe crear una cuenta con el centinela como nombre de usuario.
+        if ver.get("username") == RESET_MARKER:
+            return False, "Ese código es para restablecer contraseña. Usa la opción de recuperación."
+
         # Verificar expiración
         ahora = datetime.now(timezone.utc)
         expira_str = ver["expira"]
@@ -688,7 +968,13 @@ def verificar_codigo_y_crear_cuenta(email: str, codigo: str) -> tuple[bool, str]
 
 def reenviar_codigo(email: str) -> tuple[bool, str]:
     """Reenvía el código de verificación para un email pendiente."""
-    email_norm = email.strip().lower()
+    email_norm = (email or "").strip().lower()
+    if not EMAIL_REGEX.match(email_norm):
+        return False, "El correo no tiene un formato válido"
+
+    clave = f"resend:{email_norm}"
+    if _contar_eventos(clave) >= RESEND_MAX_POR_HORA:
+        return False, "Demasiados reenvíos. Intenta de nuevo en una hora."
 
     try:
         pendiente = _get("verificaciones_pendientes", filters={"email": f"eq.{email_norm}"})
@@ -697,16 +983,22 @@ def reenviar_codigo(email: str) -> tuple[bool, str]:
 
         ver = pendiente[0]
 
+        if ver.get("username") == RESET_MARKER:
+            return False, "Ese código es de recuperación de contraseña. Solicítalo desde esa pantalla."
+
         # Generar nuevo código
         codigo = _codigo_verificacion()
         expira = (datetime.now(timezone.utc) + timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
 
         _patch("verificaciones_pendientes", {
             "codigo": codigo,
-            "expira": expira
+            "expira": expira,
+            "creado": _now(),
         }, {"id": f"eq.{ver['id']}"})
 
-        if enviar_codigo_verificacion(email, codigo):
+        _registrar_evento(clave)
+
+        if enviar_codigo_verificacion(email_norm, codigo):
             return True, "Nuevo código enviado. Revisa tu email."
         else:
             return False, "Error enviando el email. Intenta de nuevo más tarde."
@@ -719,29 +1011,51 @@ def reenviar_codigo(email: str) -> tuple[bool, str]:
 #  Registro (mantener para compatibilidad y admin)
 # ──────────────────────────────────────────────────────────────
 
-def registrar(username: str, password: str, dias: int = 0, rol: str = "usuario") -> tuple[bool, str]:
-    """Crea un usuario nuevo (solo para admin o compatibilidad). No requiere email."""
+def registrar(username: str, password: str, dias: int = 0, rol: str = "usuario",
+              email: Optional[str] = None) -> tuple[bool, str]:
+    """Crea un usuario nuevo (solo para admin o compatibilidad).
+
+    `email` es opcional para no romper llamadas antiguas, pero el panel de
+    administracion lo manda siempre: sin email el usuario no puede recuperar
+    la cuenta ni aparece identificable en el listado. Un usuario creado desde
+    el panel se marca como verificado de una vez; el admin ya lo dio de alta.
+    """
+    username = username.strip()
     if len(username) < 3:
         return False, "El usuario debe tener al menos 3 caracteres"
     if len(password) < 6:
         return False, "La contrasena debe tener al menos 6 caracteres"
+    if rol not in ("admin", "usuario", "lector"):
+        return False, "Rol invalido"
+
+    email = (email or "").strip().lower() or None
+    if email and not EMAIL_REGEX.match(email):
+        return False, "El correo no es valido"
+
     try:
-        existing = _get("usuarios", filters={"username": f"eq.{username.strip()}"})
+        existing = _get("usuarios", filters={"username": f"eq.{username}"})
         if existing:
             return False, "Ese nombre de usuario ya existe"
 
-        _post("usuarios", {
-            "username": username.strip(),
+        if email:
+            if _get("usuarios", filters={"email": f"eq.{email}"}):
+                return False, "Ese correo ya esta registrado"
+
+        payload = {
+            "username": username,
             "password": _hash(password),
             "rol": rol,
             "activo": True,
-            "email_verificado": False,
+            "email_verificado": bool(email),
             "descargas_usadas": 0,
-            "creado": _now()
-        })
+            "creado": _now(),
+        }
+        if email:
+            payload["email"] = email
+        _post("usuarios", payload)
 
         if dias > 0:
-            uid_row = _get("usuarios", filters={"username": f"eq.{username.strip()}"})
+            uid_row = _get("usuarios", filters={"username": f"eq.{username}"})
             if uid_row:
                 uid = uid_row[0]["id"]
                 _post("suscripciones", {
@@ -759,14 +1073,33 @@ def registrar(username: str, password: str, dias: int = 0, rol: str = "usuario")
 # ──────────────────────────────────────────────────────────────
 
 def listar_usuarios() -> list[dict]:
-    rows = _get("usuarios", select="id,username,rol,activo,descargas_usadas,creado", order="creado.desc")
+    """Listado completo para el panel de administracion.
+
+    Antes se hacia una consulta a `suscripciones` POR USUARIO (N+1): con 50
+    usuarios eran 51 viajes a Supabase para pintar una tabla. Ahora son dos
+    consultas fijas, y el SELECT incluye email y estado, que el panel mostraba
+    siempre vacio/desactivado porque nunca se pedian.
+    """
+    rows = _get(
+        "usuarios",
+        select="id,username,email,rol,activo,email_verificado,descargas_usadas,creado",
+        order="creado.desc",
+    )
     result = [dict(r) for r in rows]
 
-    # Agregar fecha de expiracion
+    # `order=expira.desc` + quedarse con la primera por usuario evita el N+1.
+    # _get_all pagina, asi que no se trunca en el cap de 1000 filas.
+    suscripciones = _get_all(
+        "suscripciones", select="usuario_id,expira", order="expira.desc",
+    )
+    expira_por_usuario: dict = {}
+    for sus in suscripciones:
+        uid = sus.get("usuario_id")
+        if uid not in expira_por_usuario:
+            expira_por_usuario[uid] = sus.get("expira")
+
     for user in result:
-        sus = _get("suscripciones", filters={"usuario_id": f"eq.{user['id']}"},
-                   select="expira", order="expira.desc", limit=1)
-        user["expira"] = sus[0]["expira"] if sus else None
+        user["expira"] = expira_por_usuario.get(user["id"])
 
     return result
 

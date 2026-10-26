@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useNavigate, Link } from '@tanstack/react-router'
 import { useForm } from '@tanstack/react-form'
+import { useMutation } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/use-auth'
+import { authApi } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,7 +15,7 @@ export default function Verificar() {
   const emailFromParams = new URLSearchParams(window.location.search).get('email')
   const { verify } = useAuth()
   const [error, setError] = useState<string | null>(null)
-  const [resendMessage, setResendMessage] = useState(false)
+  const [aviso, setAviso] = useState<string | null>(null)
 
   const form = useForm({
     defaultValues: {
@@ -35,9 +37,27 @@ export default function Verificar() {
     },
   })
 
+  const reenviar = useMutation({
+    mutationFn: (correo: string) => authApi.resendCode(correo),
+    onSuccess: (res) => {
+      setError(null)
+      setAviso(res.mensaje || 'Código reenviado. Revisa tu correo.')
+    },
+    onError: (err) => {
+      setAviso(null)
+      setError(err instanceof Error ? err.message : 'No se pudo reenviar el código')
+    },
+  })
+
   const handleResend = () => {
-    setResendMessage(true)
-    setTimeout(() => setResendMessage(false), 3000)
+    const correo = String(form.getFieldValue('email') || '').trim()
+    setError(null)
+    setAviso(null)
+    if (!correo) {
+      setError('Escribe tu correo para reenviar el código')
+      return
+    }
+    reenviar.mutate(correo)
   }
 
   return (
@@ -61,10 +81,10 @@ export default function Verificar() {
           </div>
         )}
 
-        {resendMessage && (
+        {aviso && (
           <div className="mx-6 mb-2 flex items-center gap-2 rounded-md bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
             <CheckCircle2 className="h-4 w-4 shrink-0" />
-            <span>Código reenviado exitosamente</span>
+            <span>{aviso}</span>
           </div>
         )}
 
@@ -135,9 +155,10 @@ export default function Verificar() {
               <button
                 type="button"
                 onClick={handleResend}
-                className="text-primary underline-offset-4 hover:underline"
+                disabled={reenviar.isPending}
+                className="text-primary underline-offset-4 hover:underline disabled:opacity-50"
               >
-                Reenviar código
+                {reenviar.isPending ? 'Reenviando...' : 'Reenviar código'}
               </button>
               <Link to="/login" className="text-primary underline-offset-4 hover:underline">
                 Volver a inicio de sesión

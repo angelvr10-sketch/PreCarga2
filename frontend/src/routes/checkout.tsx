@@ -121,7 +121,9 @@ export default function Checkout() {
                 <p className="text-4xl font-bold">${plan.precio.toLocaleString()} MXN</p>
                 <p className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Download className="h-4 w-4" />
-                  {plan.descargas} descargas incluidas
+                  {plan.descargas >= 999999
+                    ? 'Descargas ilimitadas'
+                    : `${plan.descargas} descargas incluidas`}
                 </p>
               </div>
 

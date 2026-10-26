@@ -101,6 +101,14 @@ export default function Login() {
                     onChange={(e) => field.handleChange(e.target.value)}
                     autoComplete="current-password"
                   />
+                  <div className="flex justify-end">
+                    <Link
+                      to="/recuperar"
+                      className="text-xs text-primary underline-offset-4 hover:underline"
+                    >
+                      ¿Olvidaste tu contraseña?
+                    </Link>
+                  </div>
                 </div>
               )}
             </form.Field>

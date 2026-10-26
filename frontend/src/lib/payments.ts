@@ -12,8 +12,24 @@ interface CheckoutSession {
   session_id: string
 }
 
+export interface Pago {
+  id: number
+  monto: number | null
+  dias_comprados: number | null
+  estado: string
+  creado: string
+  stripe_payment_id?: string | null
+}
+
+interface HistorialResponse {
+  ok: boolean
+  pagos: Pago[]
+}
+
 export const paymentsApi = {
   listPlans: () => api.get<Plan[]>('/api/planes'),
+
+  history: () => api.get<HistorialResponse>('/api/pagos/historial'),
 
   createCheckout: (planId: string) =>
     api.post<CheckoutSession>('/api/checkout/stripe/create', { plan_id: planId }),

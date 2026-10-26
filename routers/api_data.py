@@ -11,10 +11,17 @@ from core import listar_solicitudes_xlsx
 from core.supabase_db import (
     leer_companias_supabase, agregar_compania_supabase, eliminar_compania_supabase,
     leer_activos_supabase, agregar_activo_supabase, eliminar_activo_supabase,
-    _get, _count_rows,
+    _get, _count_rows, _patch, _delete,
 )
 from core.db import listar_bajas_db, listar_solicitudes_db
-from core.auth import get_user_from_token, listar_usuarios
+from core.auth import (
+    get_user_from_token,
+    listar_usuarios,
+    registrar as auth_registrar,
+    eliminar_usuario,
+    agregar_dias,
+    _hash,
+)
 from core.catalogo import contiene_activo, invalidar_cache, obtener_nombre_compania_existe
 from core.comandas.repository import total_comandas
 from core.config import LOGS_DIR, DIAS_FUTURO
@@ -306,51 +313,153 @@ async def logs_get():
 
 
 # ── Admin: Usuarios ────────────────────────────────────────────
+ROLES_VALIDOS = ("admin", "usuario", "lector")
+MAX_DIAS_SUSCRIPCION = 3650
+
+
+def _serialize_admin_user(u: dict) -> dict:
+    return {
+        "id": str(u.get("id", "")),
+        "nombre": u.get("username", ""),
+        "email": u.get("email") or "",
+        "rol": u.get("rol") or "usuario",
+        "admin": u.get("rol") == "admin",
+        "activo": bool(u.get("activo", True)),
+        "verificado": bool(u.get("email_verificado", u.get("verificado", False))),
+        "descargas_usadas": u.get("descargas_usadas") or 0,
+        "expira": u.get("expira"),
+        "created_at": u.get("creado", ""),
+    }
+
+
+def _dias_del_body(body: dict) -> int:
+    raw = body.get("dias")
+    if raw is None:
+        return 0
+    try:
+        dias = int(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Los días deben ser un número entero")
+    if dias < 0 or dias > MAX_DIAS_SUSCRIPCION:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Los días deben estar entre 0 y {MAX_DIAS_SUSCRIPCION}",
+        )
+    return dias
+
+
 @router.get("/admin/usuarios")
 async def admin_usuarios_list(request: Request):
     _require_admin(request)
-    usuarios = listar_usuarios()
-    return [
-        {
-            "id": str(u.get("id", "")),
-            "nombre": u.get("username", ""),
-            "email": u.get("email", ""),
-            "admin": u.get("rol") == "admin",
-            "verificado": u.get("email_verificado", u.get("verificado", False)),
-            "created_at": u.get("creado", ""),
-        }
-        for u in usuarios
-    ]
+    return [_serialize_admin_user(u) for u in listar_usuarios()]
+
+
+@router.post("/admin/usuarios")
+async def admin_usuarios_create(request: Request):
+    _require_admin(request)
+    body = await request.json()
+
+    username = str(body.get("nombre") or body.get("username") or "").strip()
+    email = str(body.get("email") or "").strip()
+    password = str(body.get("password") or "")
+    rol = str(body.get("rol") or ("admin" if body.get("admin") else "usuario"))
+    dias = _dias_del_body(body)
+
+    if rol not in ROLES_VALIDOS:
+        raise HTTPException(status_code=400, detail="Rol inválido")
+
+    ok, mensaje = auth_registrar(username, password, dias, rol, email or None)
+    if not ok:
+        raise HTTPException(status_code=400, detail=mensaje)
+    return {"ok": True, "mensaje": mensaje}
 
 
 @router.patch("/admin/usuarios/{uid}")
 async def admin_usuarios_update(uid: str, request: Request):
-    _require_admin(request)
+    actual = _require_admin(request)
     body = await request.json()
+
+    # Un admin no puede quitarse a si mismo el rol ni desactivarse: dejaria
+    # la aplicacion sin ningun administrador y no hay forma de deshacerlo
+    # desde la interfaz.
+    es_uno_mismo = str(actual.get("id")) == str(uid)
+
     update_data = {}
-    if "admin" in body:
-        update_data["rol"] = "admin" if body["admin"] else "usuario"
+
+    if "rol" in body or "admin" in body:
+        rol = str(body.get("rol") or "usuario")
+        if "rol" not in body:
+            rol = "admin" if body.get("admin") else "usuario"
+        if rol not in ROLES_VALIDOS:
+            raise HTTPException(status_code=400, detail="Rol inválido")
+        if es_uno_mismo and rol != "admin":
+            raise HTTPException(
+                status_code=400,
+                detail="No puedes quitarte a ti mismo el rol de administrador",
+            )
+        update_data["rol"] = rol
+
+    if "activo" in body:
+        activo = bool(body["activo"])
+        if es_uno_mismo and not activo:
+            raise HTTPException(
+                status_code=400,
+                detail="No puedes desactivar tu propia cuenta",
+            )
+        update_data["activo"] = activo
+
     if "verificado" in body:
         # La columna en la BD se llama email_verificado; enviar
         # "verificado" devolvia 400 de PostgREST.
-        update_data["email_verificado"] = body["verificado"]
+        update_data["email_verificado"] = bool(body["verificado"])
+
+    if body.get("password") is not None:
+        password = str(body["password"])
+        if len(password) < 6:
+            raise HTTPException(
+                status_code=400,
+                detail="La contraseña debe tener al menos 6 caracteres",
+            )
+        update_data["password"] = _hash(password)
+
+    dias = _dias_del_body(body)
+    if dias:
+        agregar_dias(uid, dias)
+
     if update_data:
-        from core.supabase_db import _patch
         _patch("usuarios", update_data, {"id": f"eq.{uid}"})
+
+    # Restablecer la contrasena de otra persona cierra sus sesiones abiertas:
+    # si no, la contrasena nueva no protege nada porque el token anterior
+    # sigue siendo valido hasta 24 h. Al cambiar la propia no se toca, para
+    # no expulsar al admin de la sesion en la que esta trabajando.
+    if "password" in update_data and not es_uno_mismo:
+        _delete("sesiones", {"usuario_id": f"eq.{uid}"})
+
+    return {"ok": True}
+
+
+@router.delete("/admin/usuarios/{uid}")
+async def admin_usuarios_delete(uid: str, request: Request):
+    actual = _require_admin(request)
+    if str(actual.get("id")) == str(uid):
+        raise HTTPException(status_code=400, detail="No puedes eliminar tu propia cuenta")
+
+    if not _get("usuarios", filters={"id": f"eq.{uid}"}, select="id"):
+        raise HTTPException(status_code=404, detail="El usuario no existe")
+
+    try:
+        eliminar_usuario(uid)
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No se pudo eliminar el usuario: {e}",
+        )
     return {"ok": True}
 
 
 # ── Planes (Stripe) ────────────────────────────────────────────
 @router.get("/planes")
 async def planes_list():
-    from core.stripe import STRIPE_PRICE, STRIPE_DAYS, STRIPE_CURRENCY
-    # Single plan configured via environment variables
-    precio_mxn = STRIPE_PRICE / 100  # Convert from cents
-    return [
-        {
-            "id": "plan_default",
-            "nombre": f"Suscripción {STRIPE_DAYS} días",
-            "precio": precio_mxn,
-            "descargas": 999999,  # Unlimited downloads with subscription
-        }
-    ]
+    from core.stripe import listar_planes
+    return listar_planes()

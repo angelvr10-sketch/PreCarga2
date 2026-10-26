@@ -2,11 +2,10 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from core.auth import get_current_user, require_login
+from core.auth import get_current_user
 from core.stripe import (
     crear_checkout_session, procesar_webhook_stripe, procesar_evento_pago,
     obtener_info_sesion, verificar_configuracion_stripe,
-    STRIPE_PRICE,
 )
 
 router = APIRouter()
@@ -24,12 +23,25 @@ async def checkout_stripe_create(request: Request):
         return JSONResponse({"ok": False, "error": "Stripe no configurado. Verifica STRIPE_SECRET_KEY"})
 
     try:
-        result = crear_checkout_session(user["id"], user["username"])
+        body = await request.json()
+    except Exception:
+        body = {}
+    plan_id = body.get("plan_id") if isinstance(body, dict) else None
+    if not plan_id:
+        return JSONResponse(
+            {"ok": False, "error": "Selecciona un plan antes de pagar"},
+            status_code=400,
+        )
+
+    try:
+        result = crear_checkout_session(user["id"], user["username"], plan_id)
         return JSONResponse({
             "ok": True,
             "session_id": result["id"],
             "url": result["url"],
         })
+    except ValueError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     except Exception as e:
         import traceback
         error_detail = f"{str(e)}\n{traceback.format_exc()}"
@@ -99,10 +111,12 @@ async def stripe_success(request: Request, session_id: str = None):
         else:
             # No pudimos obtener info de Stripe, pero intentamos procesar
             # usando el registro que ya se creo en la DB
+            # Sin datos de Stripe: procesar_evento_pago toma los dias y el
+            # monto del registro creado al iniciar el checkout.
             fake_info = {
                 "id": session_id,
                 "payment_status": "unknown",
-                "amount_total": STRIPE_PRICE,
+                "amount_total": None,
                 "metadata": {},
             }
             event = {"type": "checkout.session.completed", "data": {"object": fake_info}}

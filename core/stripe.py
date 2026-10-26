@@ -18,9 +18,43 @@ from core.supabase_db import _get, _post, _patch, verificar_conexion
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_PRICE = int(float(os.getenv("STRIPE_PLAN_PRICE", "499.00")) * 100)  # Stripe usa centavos
-STRIPE_DAYS = int(os.getenv("STRIPE_PLAN_DAYS", "7"))
 STRIPE_CURRENCY = os.getenv("STRIPE_CURRENCY", "mxn").lower()
+
+# Catalogo de planes. El precio va en pesos; Stripe recibe centavos al crear
+# la sesion. Es la unica fuente de verdad: /api/planes y el checkout leen de
+# aqui, y el webhook toma los dias de la metadata del pago (no de una
+# constante global), para que comprar 60 dias no termine dando 14.
+PLANES = (
+    {
+        "id": "plan_14d",
+        "nombre": "Suscripción 14 días",
+        "precio": 100.0,
+        "dias": 14,
+        "descargas": 999999,
+    },
+    {
+        "id": "plan_60d",
+        "nombre": "Suscripción 60 días",
+        "precio": 180.0,
+        "dias": 60,
+        "descargas": 999999,
+    },
+)
+
+
+def listar_planes() -> list[Dict[str, Any]]:
+    """Devuelve el catalogo de planes para la API y la UI."""
+    return [dict(plan) for plan in PLANES]
+
+
+def obtener_plan(plan_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Busca un plan por id. None si no existe."""
+    for plan in PLANES:
+        if plan["id"] == plan_id:
+            return dict(plan)
+    return None
+
+
 _raw_base = os.getenv("BASE_URL", "").strip().strip('"').strip("'").rstrip("/")
 BASE_URL = _raw_base if _raw_base else "http://localhost:8000"
 
@@ -38,10 +72,16 @@ def init_stripe_payments_db():
         print(f"WARNING: No se pudo verificar la tabla pagos_stripe en Supabase: {e}")
 
 
-def crear_checkout_session(usuario_id: int, username: str) -> Dict[str, Any]:
-    """Crea una sesion de checkout en Stripe"""
+def crear_checkout_session(usuario_id: int, username: str, plan_id: str) -> Dict[str, Any]:
+    """Crea una sesion de checkout en Stripe para el plan elegido."""
     if not stripe or not STRIPE_SECRET_KEY:
         raise Exception("Stripe no esta configurado. Verifica STRIPE_SECRET_KEY")
+
+    plan = obtener_plan(plan_id)
+    if not plan:
+        raise ValueError("El plan seleccionado no existe")
+
+    precio_centavos = int(round(plan["precio"] * 100))
 
     success_url = f"{BASE_URL}/stripe/success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{BASE_URL}/stripe/cancel"
@@ -60,10 +100,12 @@ def crear_checkout_session(usuario_id: int, username: str) -> Dict[str, Any]:
             "price_data": {
                 "currency": STRIPE_CURRENCY,
                 "product_data": {
-                    "name": "Suscripcion 7 dias - Precarga",
-                    "description": "Acceso completo al sistema Precarga por 7 dias",
+                    "name": f"{plan['nombre']} - Precarga",
+                    "description": (
+                        f"Acceso completo al sistema Precarga por {plan['dias']} días"
+                    ),
                 },
-                "unit_amount": STRIPE_PRICE,  # En centavos
+                "unit_amount": precio_centavos,
             },
             "quantity": 1,
         }],
@@ -71,7 +113,8 @@ def crear_checkout_session(usuario_id: int, username: str) -> Dict[str, Any]:
         customer_email=username if "@" in username else None,
         metadata={
             "usuario_id": str(usuario_id),
-            "dias": str(STRIPE_DAYS),
+            "plan_id": plan["id"],
+            "dias": str(plan["dias"]),
         },
         success_url=success_url,
         cancel_url=cancel_url,
@@ -83,8 +126,8 @@ def crear_checkout_session(usuario_id: int, username: str) -> Dict[str, Any]:
         "usuario_id": usuario_id,
         "stripe_session_id": session.id,
         "estado": "pending",
-        "monto": STRIPE_PRICE / 100,
-        "dias_comprados": STRIPE_DAYS,
+        "monto": plan["precio"],
+        "dias_comprados": plan["dias"],
         "creado": ahora,
         "actualizado": ahora,
     })
@@ -92,6 +135,7 @@ def crear_checkout_session(usuario_id: int, username: str) -> Dict[str, Any]:
     return {
         "id": session.id,
         "url": session.url,
+        "plan": plan,
     }
 
 
@@ -123,8 +167,13 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
     # Obtener session_id o payment_intent_id
     session_id = data_object.get("id")
     payment_intent = data_object.get("payment_intent")
-    metadata = data_object.get("metadata", {})
-    usuario_id = metadata.get("usuario_id") if isinstance(metadata, dict) else None
+    metadata = data_object.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        try:
+            metadata = dict(metadata)
+        except Exception:
+            metadata = {}
+    usuario_id = metadata.get("usuario_id")
     payment_status = data_object.get("payment_status", "")
 
     print(f"DEBUG procesar_evento: session_id={session_id}, usuario_id={usuario_id}, event_type={event_type}")
@@ -142,13 +191,38 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
 
     usuario_id = int(usuario_id)
     ahora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    monto = data_object.get("amount_total", STRIPE_PRICE) / 100
 
-    print(f"DEBUG: Procesando pago para usuario_id={usuario_id}, dias={STRIPE_DAYS}")
-
-    # Buscar registro existente
+    # Buscar registro existente. Sirve de respaldo cuando el evento no trae
+    # metadata (p. ej. el fallback de /api/stripe/success), y para no volver
+    # a acreditar un pago ya aprobado.
     existing = _get("pagos_stripe", filters={"stripe_session_id": f"eq.{session_id}"},
-                    select="id,estado")
+                    select="id,estado,dias_comprados,monto")
+
+    dias = None
+    try:
+        if metadata.get("dias") is not None:
+            dias = int(metadata["dias"])
+    except (TypeError, ValueError):
+        dias = None
+    if dias is None and existing:
+        try:
+            dias = int(existing[0].get("dias_comprados"))
+        except (TypeError, ValueError):
+            dias = None
+
+    if not dias or dias <= 0:
+        print(f"DEBUG: Pago sin dias validos (session={session_id}), no se acredita")
+        return False
+
+    amount_total = data_object.get("amount_total")
+    if amount_total is not None:
+        monto = amount_total / 100
+    elif existing and existing[0].get("monto") is not None:
+        monto = existing[0]["monto"]
+    else:
+        monto = 0
+
+    print(f"DEBUG: Procesando pago para usuario_id={usuario_id}, dias={dias}")
 
     if existing:
         if existing[0]["estado"] == "approved":
@@ -156,7 +230,8 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
             return True  # Ya procesado
 
         _patch("pagos_stripe",
-               {"estado": "approved", "actualizado": ahora, "stripe_payment_id": payment_intent, "monto": monto},
+               {"estado": "approved", "actualizado": ahora, "stripe_payment_id": payment_intent,
+                "monto": monto, "dias_comprados": dias},
                {"id": f"eq.{existing[0]['id']}"})
         print(f"DEBUG: Registro de pago actualizado a approved")
     else:
@@ -167,15 +242,15 @@ def procesar_evento_pago(event: Dict[str, Any]) -> bool:
             "stripe_payment_id": payment_intent,
             "estado": "approved",
             "monto": monto,
-            "dias_comprados": STRIPE_DAYS,
+            "dias_comprados": dias,
             "creado": ahora,
             "actualizado": ahora,
         })
         print(f"DEBUG: Nuevo registro de pago creado")
 
     # Agregar dias de suscripcion
-    print(f"DEBUG: Llamando agregar_dias({usuario_id}, {STRIPE_DAYS})")
-    agregar_dias(usuario_id, STRIPE_DAYS)
+    print(f"DEBUG: Llamando agregar_dias({usuario_id}, {dias})")
+    agregar_dias(usuario_id, dias)
     reset_descargas(usuario_id)
     print(f"DEBUG: Suscripcion agregada, descargas reseteadas")
 

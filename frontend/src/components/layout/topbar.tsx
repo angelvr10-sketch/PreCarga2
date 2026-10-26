@@ -11,10 +11,11 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { LogOut, Search, Bell, Menu } from 'lucide-react'
+import { LogOut, Search, Bell, Menu, KeyRound, UserRound } from 'lucide-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { SearchPalette } from '@/components/layout/search-palette'
+import { ChangePasswordDialog } from '@/components/layout/change-password-dialog'
 
 export function Topbar() {
   const { user } = useAuth()
@@ -22,6 +23,7 @@ export function Topbar() {
   const { toggleMenu } = useSidebar()
   const navigate = useNavigate()
   const [searchOpen, setSearchOpen] = useState(false)
+  const [passwordOpen, setPasswordOpen] = useState(false)
 
   // Atajo global: Ctrl+K (Windows/Linux) y Cmd+K (Mac) abren la paleta.
   useEffect(() => {
@@ -102,6 +104,15 @@ export function Topbar() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => void navigate({ to: '/cuenta' })}>
+              <UserRound className="mr-2 h-4 w-4" />
+              <span>Mi cuenta</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setPasswordOpen(true)}>
+              <KeyRound className="mr-2 h-4 w-4" />
+              <span>Cambiar contraseña</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             {/* Item de /planes retirado temporalmente. Se elimino tambien el
                 separador que lo acompanaba para no dejar dos seguidos. */}
             <DropdownMenuItem onClick={() => void logout()} className="text-destructive focus:text-destructive">
@@ -112,6 +123,7 @@ export function Topbar() {
         </DropdownMenu>
       </div>
       <SearchPalette open={searchOpen} onOpenChange={setSearchOpen} />
+      <ChangePasswordDialog open={passwordOpen} onOpenChange={setPasswordOpen} />
     </header>
   )
 }
