@@ -589,7 +589,9 @@ def _enviar_brevo(to: str, subject: str, body: str) -> bool:
             "sender": {"name": BREVO_SENDER_NAME, "email": BREVO_SENDER_EMAIL},
             "to": [{"email": to}],
             "subject": subject,
-            "text": body,
+            # La API v3 de Brevo usa textContent/htmlContent; con "text"
+            # responde 400 missing_parameter y no envia nada.
+            "textContent": body,
         },
         timeout=10.0,
     )
