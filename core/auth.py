@@ -21,6 +21,16 @@ from core.supabase_db import (
 # Constante para descargas gratis
 MAX_DESCARGAS_GRATIS = 30
 
+def _env_email(nombre: str, defecto: str = "") -> str:
+    """Lee una variable de email y quita espacios y comillas exteriores.
+
+    En paneles como Render es facil pegar el valor con las comillas del .env
+    ("xkeysib-..."). Eso viaja literal en la cabecera y Brevo responde 401
+    "Key not found" aunque la clave sea correcta.
+    """
+    return os.getenv(nombre, defecto).strip().strip('"').strip("'")
+
+
 # Configuracion de email via Resend (debe estar en .env)
 #
 # El .strip() no es cosmetico: una clave con un espacio al final (muy facil de
@@ -28,8 +38,8 @@ MAX_DESCARGAS_GRATIS = 30
 # "Bearer re_xxx " y httpx lanza LocalProtocolError: Illegal header value,
 # sin llegar a pegarle a la API de Resend. El error es de conexion, no de
 # credencial, asi que no dice nada de la clave.
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
-FROM_EMAIL = os.getenv("FROM_EMAIL", "Precarga <noreply@precarga.com>").strip()
+RESEND_API_KEY = _env_email("RESEND_API_KEY")
+FROM_EMAIL = _env_email("FROM_EMAIL", "Precarga <noreply@precarga.com>")
 
 # Brevo (ex Sendinblue). A diferencia de Resend, Brevo deja verificar una
 # direccion de correo individual sin comprar ni verificar un dominio, asi que
@@ -37,18 +47,18 @@ FROM_EMAIL = os.getenv("FROM_EMAIL", "Precarga <noreply@precarga.com>").strip()
 #
 # El .strip() tambien aqui no es cosmetico: un espacio al final en la clave
 # hace que Brevo responda 401 en vez de decir que la clave no es valida.
-BREVO_API_KEY = os.getenv("BREVO_API_KEY", "").strip()
-BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "Precarga").strip()
-BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL", "").strip()
+BREVO_API_KEY = _env_email("BREVO_API_KEY")
+BREVO_SENDER_NAME = _env_email("BREVO_SENDER_NAME", "Precarga")
+BREVO_SENDER_EMAIL = _env_email("BREVO_SENDER_EMAIL")
 
 # Brevo por SMTP. Se deja esta via porque el login se ve siempre en el panel y
 # la SMTP key se revela con un clic, mientras que la API key solo se muestra una
 # vez al crearla. El usuario con el que se entra es un identificador propio de
 # Brevo (algo@smtp-brevo.com), NO es el correo remitente.
-BREVO_SMTP_HOST = os.getenv("BREVO_SMTP_HOST", "smtp-relay.brevo.com").strip()
+BREVO_SMTP_HOST = _env_email("BREVO_SMTP_HOST", "smtp-relay.brevo.com")
 BREVO_SMTP_PORT = int(os.getenv("BREVO_SMTP_PORT", "587") or 587)
-BREVO_SMTP_LOGIN = os.getenv("BREVO_SMTP_LOGIN", "").strip()
-BREVO_SMTP_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD", "").strip()
+BREVO_SMTP_LOGIN = _env_email("BREVO_SMTP_LOGIN")
+BREVO_SMTP_PASSWORD = _env_email("BREVO_SMTP_PASSWORD")
 
 # Envio directo por el SMTP de un Gmail propio. Esta es la unica via que no
 # pide ni cuenta en un proveedor de email ni dominio: se usa cuando todavia
@@ -58,9 +68,9 @@ BREVO_SMTP_PASSWORD = os.getenv("BREVO_SMTP_PASSWORD", "").strip()
 # el envio si detecta volumen anomalo o si la cuenta corre riesgo de compromiso,
 # y ademas queda atado a una cuenta personal. Para produccion, un dominio y un
 # proveedor serio.
-GMAIL_USER = os.getenv("GMAIL_USER", "").strip()
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "").strip()
-GMAIL_SMTP_HOST = os.getenv("GMAIL_SMTP_HOST", "smtp.gmail.com").strip()
+GMAIL_USER = _env_email("GMAIL_USER")
+GMAIL_APP_PASSWORD = _env_email("GMAIL_APP_PASSWORD")
+GMAIL_SMTP_HOST = _env_email("GMAIL_SMTP_HOST", "smtp.gmail.com")
 GMAIL_SMTP_PORT = int(os.getenv("GMAIL_SMTP_PORT", "465") or 465)
 
 # Rate limiting: max 3 registros por IP en 24h
@@ -585,6 +595,9 @@ def _enviar_brevo(to: str, subject: str, body: str) -> bool:
     )
     if response.status_code in (200, 201):
         return True
+    if response.status_code == 401:
+        print("[EMAIL] Brevo 401: la clave no existe. BREVO_API_KEY debe ser la "
+              "API key (xkeysib-...), NO la SMTP key (xsmtpsib-...).")
     print(f"[EMAIL] Brevo fallo [{response.status_code}] desde={BREVO_SENDER_EMAIL}: {response.text}")
     return False
 
