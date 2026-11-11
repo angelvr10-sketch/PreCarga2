@@ -52,6 +52,14 @@ class ErrorComandas(Exception):
     """Fallo de la capa de datos de comandas."""
 
 
+class ErrorComandaDuplicada(ErrorComandas):
+    """Ya hay una comanda con ese folio en esa fecha y ese usuario.
+
+    Es un caso de uso, no un fallo: el router lo traduce a 409 para que quien
+    intento crearla sepa que la comanda ya existe, en vez de ver un 500.
+    """
+
+
 # ── Identidad ──────────────────────────────────────────────────
 
 def clave_de_usuario(usuario: dict) -> str:
@@ -342,6 +350,86 @@ def borrar(usuario: dict, fecha_iso: str, folio: str) -> bool:
     except Exception as exc:
         raise ErrorComandas(f"No se pudo borrar: {exc}") from exc
     return bool(eliminadas)
+
+
+def crear(usuario: dict, fecha_iso: str, comanda: Comanda) -> Comanda:
+    """Inserta UNA comanda capturada a mano (no viene de ningun PDF).
+
+    NO es un upsert, y es a proposito: con `resolution=merge-duplicates` un
+    folio repetido PISARIA en silencio la comanda que ya estaba, y "crear" no
+    puede significar "reemplazar lo que habia". Para cambiar una comanda esta
+    `actualizar`; el duplicado se responde como `ErrorComandaDuplicada` (409).
+
+    La comprobacion previa con `obtener` da un mensaje util en el caso normal.
+    La garantia real, si dos peticiones entran a la vez, es el indice unico
+    (folio, subido_por, fecha_registro) de migraciones/003_comandas.sql: la
+    segunda recibe 409 de PostgREST y aqui se traduce al mismo error. Si ese
+    indice no estuviera, esto NO duplicaria en silencio: el 409 lo delata.
+    """
+    username = clave_de_usuario(usuario)
+
+    if obtener(usuario, fecha_iso, comanda.comanda) is not None:
+        raise ErrorComandaDuplicada(_mensaje_duplicado(comanda.comanda, fecha_iso))
+
+    try:
+        _post(TABLA, _payload(username, fecha_iso, comanda))
+    except Exception as exc:
+        if _es_duplicado(exc):
+            raise ErrorComandaDuplicada(
+                _mensaje_duplicado(comanda.comanda, fecha_iso)
+            ) from exc
+        raise ErrorComandas(f"No se pudo crear la comanda: {exc}") from exc
+
+    return comanda
+
+
+def _mensaje_duplicado(folio: str, fecha_iso: str) -> str:
+    return (
+        f"Ya existe la comanda {folio} del {fecha_iso}. "
+        "Editala en vez de crearla de nuevo."
+    )
+
+def _es_duplicado(exc: Exception) -> bool:
+    """¿El fallo de PostgREST es una violacion de llave unica?
+
+    `_post` deja pasar la `HTTPStatusError` con la respuesta adjunta, asi que el
+    409 se lee del status. El texto se mira de respaldo porque `_status_error`
+    arma el mensaje con el cuerpo de Supabase, donde va "duplicate key".
+    """
+    respuesta = getattr(exc, "response", None)
+    if getattr(respuesta, "status_code", None) == 409:
+        return True
+    return "duplicate key" in str(exc).lower()
+
+
+def actualizar(usuario: dict, fecha_iso: str, folio: str, comanda: Comanda) -> bool:
+    """Sobrescribe los datos de UNA comanda existente.
+
+    Solo cambia las columnas `datos` y `updated_at`: el folio, el dueño y la
+    fecha son la llave de la fila y no se mueven. Por eso el folio que se
+    escribe en `datos` es el MISMO que se uso para filtrar, aunque llegue con
+    otra caja: si no, la pantalla mostraria un folio que ya no casa con su
+    columna.
+
+    El filtro lleva `subido_por` via `_filtro_usuario`, asi que nadie puede
+    modificar la comanda de otro usuario aunque conozca el folio y la fecha.
+
+    Devuelve False cuando no habia ninguna fila que modificar; el router usa eso
+    para responder 404 sin inventarse un error de servidor.
+    """
+    username = clave_de_usuario(usuario)
+    filtros = _filtro_usuario(
+        username, {"fecha_registro": f"eq.{fecha_iso}", "folio": f"eq.{folio}"}
+    )
+    fila = {
+        "datos": comanda.a_dict(),
+        "updated_at": datetime.now().isoformat(),
+    }
+    try:
+        modificadas = _patch(TABLA, fila, filtros)
+    except Exception as exc:
+        raise ErrorComandas(f"No se pudo modificar la comanda {folio}: {exc}") from exc
+    return bool(modificadas)
 
 
 # ── Soporte ────────────────────────────────────────────────────

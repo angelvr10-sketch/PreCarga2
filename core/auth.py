@@ -345,7 +345,10 @@ def puede_descargar(user: dict) -> tuple[bool, str]:
         return True, ""
 
     # Verificar descargas gratis disponibles
-    usadas = user.get("descargas_usadas", 0)
+    # `or 0` defiende contra NULL: en local el Supabase falso no aplica el
+    # DEFAULT 0 de la columna y la puede devolver como None (mismo patron que
+    # api_auth.py y api_data.py usan con este campo).
+    usadas = user.get("descargas_usadas") or 0
     if usadas < MAX_DESCARGAS_GRATIS:
         return True, ""
 
@@ -357,7 +360,7 @@ def contar_descarga(usuario_id: int):
     # Obtener valor actual
     rows = _get("usuarios", filters={"id": f"eq.{usuario_id}"}, select="descargas_usadas")
     if rows:
-        actuales = rows[0].get("descargas_usadas", 0)
+        actuales = rows[0].get("descargas_usadas") or 0
         _patch("usuarios", {"descargas_usadas": actuales + 1}, {"id": f"eq.{usuario_id}"})
 
 

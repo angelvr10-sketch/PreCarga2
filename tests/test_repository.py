@@ -33,12 +33,17 @@ from core.comandas.parser import Comanda  # noqa: E402
 class Grabadora:
     """Sustituye `_get` y registra lo que se le pidio."""
 
-    def __init__(self, filas=None, http_status=200, http_json=None):
+    def __init__(self, filas=None, http_status=200, http_json=None,
+                 patch_resultado=None):
         self.filas = filas or []
         self.llamadas = []
         self.http_status = http_status
         self.http_json = http_json if http_json is not None else []
         self.posts = []
+        # Lo que devuelve `_patch`: por defecto, una fila modificada.
+        self.patch_resultado = (
+            [{"folio": "OCT001"}] if patch_resultado is None else patch_resultado
+        )
 
     def _get(self, table, select="*", filters=None, order=None, limit=None):
         self.llamadas.append({
@@ -51,6 +56,12 @@ class Grabadora:
         self.posts.append({"table": table, "data": data})
         return {"id": 1}
 
+    def _patch(self, table, data, filters):
+        self.llamadas.append({
+            "table": table, "data": data, "filters": filters, "patch": True,
+        })
+        return self.patch_resultado
+
     def _delete(self, table, filters):
         self.llamadas.append({"table": table, "filters": filters, "delete": True})
         return [{"folio": "X"}]
@@ -58,6 +69,7 @@ class Grabadora:
     def install(self, monkeypatch):
         monkeypatch.setattr(repo, "_get", self._get)
         monkeypatch.setattr(repo, "_post", self._post)
+        monkeypatch.setattr(repo, "_patch", self._patch)
         monkeypatch.setattr(repo, "_delete", self._delete)
         return self
 
@@ -380,3 +392,141 @@ class TestBorrar:
 
         G().install(monkeypatch)
         assert repo.borrar({"username": "erika"}, "2026-10-07", "NOPE") is False
+
+
+# ── Crear una comanda suelta ───────────────────────────────────
+
+def _error_de_postgrest(status: int, texto: str = "") -> Exception:
+    """Un HTTPStatusError con la forma que arma core/supabase_db.py."""
+    import httpx
+
+    peticion = httpx.Request("POST", "https://supabase.test/rest/v1/comandas")
+    respuesta = httpx.Response(status, request=peticion, text=texto)
+    return httpx.HTTPStatusError(f"{status} | Supabase: {texto}",
+                                 request=peticion, response=respuesta)
+
+
+class TestCrear:
+
+    def _c(self, folio="OCT001", pax=5):
+        return Comanda(folio, "06:00", "COTEMAR", "ABKATUN A", pax, "GANGWAY",
+                       pax, 0, "VIANDA", "COMIDA")
+
+    def test_inserta_con_las_columnas_de_la_tabla(self, monkeypatch):
+        """Si faltara una columna, PostgREST rechazaria el POST."""
+        g = Grabadora([]).install(monkeypatch)
+        repo.crear({"username": "Erika"}, "2026-10-07", self._c())
+
+        fila = g.posts[0]["data"]
+        assert set(fila) == set(repo.COLUMNAS_UPSERT)
+        assert fila["folio"] == "OCT001"
+        assert fila["subido_por"] == "erika"      # normalizado
+        assert fila["fecha_registro"] == "2026-10-07"
+        assert fila["datos"]["comanda"] == "OCT001"
+        assert fila["updated_at"]
+
+    def test_no_es_un_upsert(self, monkeypatch):
+        """Un upsert pisaria la comanda existente en silencio. `crear` va por
+        `_post` plano, sin `on_conflict` ni merge-duplicates."""
+        g = Grabadora([]).install(monkeypatch)
+        repo.crear({"username": "erika"}, "2026-10-07", self._c())
+        assert g.posts, "no inserto nada"
+
+    def test_duplicado_propio_es_error(self, monkeypatch):
+        filas = [{"folio": "OCT001", "subido_por": "erika",
+                  "fecha_registro": "2026-10-07", "datos": {"comanda": "OCT001"}}]
+        g = Grabadora(filas).install(monkeypatch)
+
+        with pytest.raises(repo.ErrorComandaDuplicada) as exc:
+            repo.crear({"username": "erika"}, "2026-10-07", self._c())
+        assert "Ya existe la comanda OCT001" in str(exc.value)
+        assert g.posts == [], "intento insertar igual"
+
+    def test_el_mismo_folio_de_otro_usuario_no_bloquea(self, monkeypatch):
+        """Los folios se numeran por destino: dos usuarios pueden coincidir."""
+        g = Grabadora([]).install(monkeypatch)
+        ajenas = [{"folio": "OCT001", "subido_por": "jbl",
+                   "fecha_registro": "2026-10-07", "datos": {}}]
+
+        def _get(table, select="*", filters=None, order=None, limit=None):
+            dueno = (filters or {}).get("subido_por", "").split(".", 1)[-1]
+            return [f for f in ajenas if f["subido_por"] == dueno]
+
+        monkeypatch.setattr(repo, "_get", _get)
+        repo.crear({"username": "erika"}, "2026-10-07", self._c())
+        assert len(g.posts) == 1
+
+    def test_el_409_de_la_base_se_traduce_a_duplicado(self, monkeypatch):
+        """La comprobacion previa no basta si dos peticiones entran a la vez:
+        la garantia es el indice unico y su 409 tiene que llegar como
+        `ErrorComandaDuplicada`, no como un 500."""
+        def _post(tabla, datos):
+            raise _error_de_postgrest(409, "duplicate key value violates unique constraint")
+
+        monkeypatch.setattr(repo, "_post", _post)
+        monkeypatch.setattr(repo, "_get", lambda *a, **k: [])
+
+        with pytest.raises(repo.ErrorComandaDuplicada):
+            repo.crear({"username": "erika"}, "2026-10-07", self._c())
+
+    def test_otro_fallo_de_la_base_es_errorcomandas(self, monkeypatch):
+        def _post(tabla, datos):
+            raise _error_de_postgrest(500, "connection reset")
+
+        monkeypatch.setattr(repo, "_post", _post)
+        monkeypatch.setattr(repo, "_get", lambda *a, **k: [])
+
+        with pytest.raises(repo.ErrorComandas):
+            repo.crear({"username": "erika"}, "2026-10-07", self._c())
+
+
+# ── Modificar una comanda suelta ───────────────────────────────
+
+class TestActualizar:
+
+    def _c(self, pax=5):
+        return Comanda("OCT001", "06:00", "COTEMAR", "ABKATUN A", pax, "GANGWAY",
+                       pax, 0, "VIANDA", "COMIDA")
+
+    def test_solo_escribe_datos_y_updated_at(self, monkeypatch):
+        """El folio, la fecha y el dueño son la llave: si se mandaran en el
+        PATCH, la fila se mudaria de sitio."""
+        g = Grabadora([]).install(monkeypatch)
+        repo.actualizar({"username": "erika"}, "2026-10-07", "OCT001", self._c(pax=9))
+
+        datos = g.llamadas[0]["data"]
+        assert set(datos) == {"datos", "updated_at"}
+        assert datos["datos"]["pax"] == 9
+
+    def test_filtra_por_usuario_fecha_y_folio(self, monkeypatch):
+        """Sin `subido_por` en el filtro, el folio de un usuario modificaria la
+        comanda de otro."""
+        g = Grabadora([]).install(monkeypatch)
+        repo.actualizar({"username": "Erika"}, "2026-10-07", "OCT001", self._c())
+
+        assert g.llamadas[0]["filters"] == {
+            "subido_por": "ilike.erika",
+            "fecha_registro": "eq.2026-10-07",
+            "folio": "eq.OCT001",
+        }
+
+    def test_sin_fila_modificada_devuelve_false(self, monkeypatch):
+        Grabadora([], patch_resultado=[]).install(monkeypatch)
+        assert repo.actualizar(
+            {"username": "erika"}, "2026-10-07", "NOPE", self._c()
+        ) is False
+
+    def test_con_fila_modificada_devuelve_true(self, monkeypatch):
+        Grabadora([], patch_resultado=[{"folio": "OCT001"}]).install(monkeypatch)
+        assert repo.actualizar(
+            {"username": "erika"}, "2026-10-07", "OCT001", self._c()
+        ) is True
+
+    def test_un_fallo_de_la_base_es_errorcomandas(self, monkeypatch):
+        def _patch(tabla, datos, filtros):
+            raise _error_de_postgrest(500, "boom")
+
+        monkeypatch.setattr(repo, "_patch", _patch)
+        with pytest.raises(repo.ErrorComandas):
+            repo.actualizar({"username": "erika"}, "2026-10-07", "OCT001", self._c())
+

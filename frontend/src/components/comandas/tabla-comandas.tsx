@@ -8,6 +8,10 @@
  *
  * La busqueda usa `globalFilter` sobre folio, compania y destino, que es lo
  * que hacia la app (app.py:1751-1756).
+ *
+ * La columna de acciones (modificar / eliminar) solo se pinta si el rol puede
+ * escribir. Sus botones llevan `stopPropagation` porque la fila entera abre el
+ * detalle: sin eso, editar abriria tambien el dialogo de detalle encima.
  */
 import { useMemo, useState } from 'react'
 import {
@@ -29,7 +33,7 @@ import { Input } from '@/components/ui/input'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import { Search, Download, FileText, Inbox } from 'lucide-react'
+import { Search, Download, FileText, Inbox, Pencil, Trash2 } from 'lucide-react'
 import type { Comanda } from '@/types/comandas'
 
 interface Props {
@@ -39,15 +43,29 @@ interface Props {
   onDescargar: (folio: string) => Promise<boolean>
   /** El boton se deshabilita mientras corre una descarga. */
   descargando: string | null
+  /** El rol puede crear/modificar/eliminar. Si no, no hay columna de acciones. */
+  puedeEditar?: boolean
+  onEditar?: (comanda: Comanda) => void
+  onEliminar?: (comanda: Comanda) => void
+  /** Hay una escritura en vuelo: los botones de accion se deshabilitan. */
+  ocupada?: boolean
 }
 
-export function TablaComandas({ comandas, onDescargar, descargando }: Props) {
+export function TablaComandas({
+  comandas,
+  onDescargar,
+  descargando,
+  puedeEditar = false,
+  onEditar,
+  onEliminar,
+  ocupada = false,
+}: Props) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'comanda', desc: false }])
   const [busqueda, setBusqueda] = useState('')
   const [detalle, setDetalle] = useState<Comanda | null>(null)
 
-  const columnas = useMemo<ColumnDef<Comanda>[]>(
-    () => [
+  const columnas = useMemo<ColumnDef<Comanda>[]>(() => {
+    const base: ColumnDef<Comanda>[] = [
       {
         accessorKey: 'comanda',
         header: 'Folio',
@@ -117,9 +135,55 @@ export function TablaComandas({ comandas, onDescargar, descargando }: Props) {
           )
         },
       },
-    ],
-    [setDetalle],
-  )
+    ]
+
+    // Sin permiso de escritura no se pinta la columna: un boton que va a
+    // responder 403 es peor que no tenerlo.
+    if (!puedeEditar || (!onEditar && !onEliminar)) return base
+
+    base.push({
+      id: 'acciones',
+      header: '',
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end gap-0.5">
+          {onEditar && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              title="Modificar comanda"
+              aria-label={`Modificar ${row.original.comanda}`}
+              disabled={ocupada}
+              onClick={(e) => {
+                e.stopPropagation()
+                onEditar(row.original)
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {onEliminar && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              title="Eliminar comanda"
+              aria-label={`Eliminar ${row.original.comanda}`}
+              disabled={ocupada}
+              className="text-destructive hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation()
+                onEliminar(row.original)
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      ),
+    })
+
+    return base
+  }, [ocupada, onEditar, onEliminar, puedeEditar])
 
   const tabla = useReactTable({
     data: comandas,

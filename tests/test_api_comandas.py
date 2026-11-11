@@ -106,6 +106,53 @@ class AlmacenFalso:
             "ultimas_fechas": [], "error": None,
         }
 
+    # ── Escritura de una comanda suelta (crear / modificar / borrar) ──
+    #
+    # Reproducen las reglas de `core/comandas/repository.py` que importan para la
+    # capa HTTP: el duplicado es un error de uso (no un 500), y el filtro por
+    # dueño se aplica SIEMPRE, aunque el folio y la fecha coincidan.
+
+    def crear(self, usuario, fecha_iso, comanda):
+        from core.comandas.repository import ErrorComandaDuplicada
+        u = usuario["username"].lower()
+        if any(f["folio"] == comanda.comanda and f["subido_por"] == u
+               and f["fecha_registro"] == fecha_iso for f in self.filas):
+            raise ErrorComandaDuplicada(
+                f"Ya existe la comanda {comanda.comanda} del {fecha_iso}"
+            )
+        self.escrituras += 1
+        self.filas.append({
+            "folio": comanda.comanda, "subido_por": u, "fecha_registro": fecha_iso,
+            "datos": comanda.a_dict(), "updated_at": datetime.now().isoformat(),
+        })
+        return comanda
+
+    def actualizar(self, usuario, fecha_iso, folio, comanda):
+        u = usuario["username"].lower()
+        for i, f in enumerate(self.filas):
+            if (f["folio"] == folio and f["subido_por"] == u
+                    and f["fecha_registro"] == fecha_iso):
+                self.escrituras += 1
+                self.filas[i] = {
+                    **f, "datos": comanda.a_dict(),
+                    "updated_at": datetime.now().isoformat(),
+                }
+                return True
+        return False
+
+    def borrar(self, usuario, fecha_iso, folio):
+        u = usuario["username"].lower()
+        antes = len(self.filas)
+        self.filas = [
+            f for f in self.filas
+            if not (f["folio"] == folio and f["subido_por"] == u
+                    and f["fecha_registro"] == fecha_iso)
+        ]
+        if len(self.filas) == antes:
+            return False
+        self.escrituras += 1
+        return True
+
     # ── API que usa el router ──
     def serie_diaria_barcos(self, dias, hoy=None):
         """La serie global del dashboard, sobre las filas del almacen.
@@ -138,7 +185,8 @@ def almacen(monkeypatch):
     import core.comandas.repository as repo
 
     for nombre in ("listar", "obtener", "fechas_disponibles",
-                   "upsert_masivo", "diagnostico", "serie_diaria_barcos"):
+                   "upsert_masivo", "diagnostico", "serie_diaria_barcos",
+                   "crear", "actualizar", "borrar"):
         monkeypatch.setattr(rc, nombre, getattr(a, nombre))
         monkeypatch.setattr(repo, nombre, getattr(a, nombre))
     return a
@@ -409,6 +457,305 @@ class TestImportar:
         assert r.json().get("ok") is not True
 
 
+# ── Escritura de una comanda suelta ────────────────────────────
+
+def _cuerpo(**kwargs):
+    """Cuerpo de POST/PUT con todos los campos; cada test cambia uno."""
+    datos = {
+        "fecha": "2026-10-07",
+        "comanda": "NOV001",
+        "horario": "06:30",
+        "compania": "NORCONTROL",
+        "destino": "ABKATUN A",
+        "pax": 12,
+        "transporte": "GANGWAY",
+        "tipo": "VIANDA",
+        "observaciones": "COMIDA-VIANDA",
+    }
+    datos.update(kwargs)
+    return datos
+
+
+class TestCrearComanda:
+    """POST /api/comandas/ — la comanda que no viene de ningun PDF."""
+
+    def test_crea_y_aparece_en_la_lista(self, cliente, almacen, descargas):
+        _sesion(cliente, USUARIO)
+        r = cliente.post("/api/comandas/", json=_cuerpo())
+        assert r.status_code == 201, r.text
+        assert r.json()["ok"] is True
+        assert r.json()["comanda"]["comanda"] == "NOV001"
+
+        lista = cliente.get("/api/comandas/?fecha=2026-10-07").json()
+        assert lista["total"] == 1
+        assert lista["total_pax"] == 12          # menu_1 se copio de pax
+
+    def test_la_fecha_nueva_entra_en_el_selector(self, cliente, almacen, descargas):
+        """Sin esto, crear la primera comanda de un dia no dejaria volver a el."""
+        _sesion(cliente, USUARIO)
+        almacen.filas.clear()
+        r = cliente.post("/api/comandas/", json=_cuerpo(fecha="2026-11-05"))
+        assert r.status_code == 201, r.text
+        assert cliente.get("/api/comandas/fechas").json()["fechas"] == ["2026-11-05"]
+
+    def test_normaliza_folio_y_horario(self, cliente, almacen, descargas):
+        _sesion(cliente, USUARIO)
+        r = cliente.post("/api/comandas/", json=_cuerpo(comanda="nov 002",
+                                                        horario="7:5"))
+        assert r.status_code == 201, r.text
+        c = r.json()["comanda"]
+        assert (c["comanda"], c["horario"]) == ("NOV002", "07:05")
+
+    def test_duplicado_es_409_y_no_sobrescribe(self, cliente, almacen, descargas):
+        """Crear no puede ser un upsert: un folio repetido no debe pisar la
+        comanda que ya estaba."""
+        _sesion(cliente, USUARIO)
+        almacen.sembrar("erika", "2026-10-07", [_comanda("NOV001", pax=3, m1=3)])
+
+        r = cliente.post("/api/comandas/", json=_cuerpo(pax=99))
+        assert r.status_code == 409
+        assert "Ya existe" in r.json()["detail"]
+
+        lista = cliente.get("/api/comandas/?fecha=2026-10-07").json()
+        assert lista["total"] == 1
+        assert lista["total_pax"] == 3, "el 409 igual sobrescribio la comanda"
+
+    def test_el_mismo_folio_de_otro_usuario_si_se_puede(self, cliente, almacen, descargas):
+        """Los folios se numeran por destino, no por persona: dos usuarios
+        pueden tener el mismo folio el mismo dia."""
+        _sesion(cliente, USUARIO)
+        almacen.sembrar("jbl", "2026-10-07", [_comanda("NOV001", pax=40, m1=40)])
+
+        r = cliente.post("/api/comandas/", json=_cuerpo(pax=2))
+        assert r.status_code == 201, r.text
+        # La de erika es la suya, y la de jbl sigue intacta.
+        assert cliente.get("/api/comandas/?fecha=2026-10-07").json()["total_pax"] == 2
+        assert len(almacen.filas) == 2
+
+    def test_sin_fecha_es_400(self, cliente, almacen, descargas):
+        """Las escrituras no asumen 'hoy': una comanda guardada en el dia
+        equivocado es peor que un error."""
+        _sesion(cliente, USUARIO)
+        cuerpo = _cuerpo()
+        del cuerpo["fecha"]
+        r = cliente.post("/api/comandas/", json=cuerpo)
+        assert r.status_code == 400
+        assert "fecha" in r.json()["detail"].lower()
+
+    def test_fecha_invalida_es_400(self, cliente, almacen, descargas):
+        _sesion(cliente, USUARIO)
+        assert cliente.post("/api/comandas/",
+                            json=_cuerpo(fecha="2026-13-45")).status_code == 400
+
+    @pytest.mark.parametrize("cambio", [
+        {"horario": "25:99"},
+        {"horario": ""},
+        {"tipo": "OTRA"},
+        {"transporte": "CAMION"},
+        {"pax": -1},
+        {"pax": "muchos"},
+        {"pax": 0, "menu_1": 0, "menu_2": 0},
+        {"compania": ""},
+        {"destino": "   "},
+        {"comanda": ""},
+        {"comanda": "CON ESPACIO@"},
+        {"observaciones": "x" * 600},
+    ])
+    def test_datos_invalidos_son_400(self, cliente, almacen, descargas, cambio):
+        _sesion(cliente, USUARIO)
+        r = cliente.post("/api/comandas/", json=_cuerpo(**cambio))
+        assert r.status_code == 400, f"{cambio} deberia ser 400, fue {r.status_code}"
+        assert almacen.filas == [], "se guardo algo con datos invalidos"
+
+    def test_cuerpo_que_no_es_objeto_es_400(self, cliente, almacen, descargas):
+        _sesion(cliente, USUARIO)
+        r = cliente.post("/api/comandas/", json=["NOV001"])
+        assert r.status_code == 400
+
+    def test_sin_sesion_es_401(self, cliente, almacen, descargas, monkeypatch):
+        import routers.api_comandas as rc
+        monkeypatch.setattr(rc, "get_current_user", lambda request: None)
+        cliente.cookies.clear()
+        assert cliente.post("/api/comandas/", json=_cuerpo()).status_code == 401
+
+    def test_lector_no_crea(self, cliente, almacen, descargas):
+        _sesion(cliente, LECTOR)
+        r = cliente.post("/api/comandas/", json=_cuerpo())
+        assert r.status_code == 403
+        assert "crear comandas" in r.json()["detail"]
+        assert almacen.filas == []
+
+
+class TestModificarComanda:
+    """PUT /api/comandas/{folio} — corregir una comanda existente."""
+
+    @pytest.fixture(autouse=True)
+    def _datos(self, almacen):
+        almacen.sembrar("erika", "2026-10-07", [
+            _comanda("OCT001", pax=5, m1=5, obs="COMIDA-VIANDA"),
+        ])
+        almacen.sembrar("jbl", "2026-10-07", [
+            _comanda("OCT001", pax=99, m1=99),
+        ])
+
+    def test_modifica_los_datos(self, cliente, almacen, descargas):
+        _sesion(cliente, USUARIO)
+        r = cliente.put("/api/comandas/OCT001?fecha=2026-10-07",
+                        json=_cuerpo(comanda=None, pax=8, menu_1=8,
+                                     compania="COTEMAR", horario="9:15"))
+        assert r.status_code == 200, r.text
+
+        c = cliente.get("/api/comandas/?fecha=2026-10-07").json()["comandas"][0]
+        assert (c["pax"], c["menu_1"], c["compania"], c["horario"]) == \
+            (8, 8, "COTEMAR", "09:15")
+
+    def test_el_folio_no_cambia(self, cliente, almacen, descargas):
+        _sesion(cliente, USUARIO)
+        cliente.put("/api/comandas/OCT001?fecha=2026-10-07",
+                    json=_cuerpo(comanda=None, pax=8))
+        folios = [f["folio"] for f in almacen.filas if f["subido_por"] == "erika"]
+        assert folios == ["OCT001"]
+
+    def test_no_toca_la_comanda_de_otro_usuario(self, cliente, almacen, descargas):
+        """Mismo folio, misma fecha, otro dueño: el filtro por usuario manda."""
+        _sesion(cliente, USUARIO)
+        cliente.put("/api/comandas/OCT001?fecha=2026-10-07",
+                    json=_cuerpo(comanda=None, pax=8))
+
+        de_jbl = [f for f in almacen.filas
+                  if f["subido_por"] == "jbl" and f["folio"] == "OCT001"]
+        assert de_jbl[0]["datos"]["pax"] == 99
+
+    def test_inexistente_es_404(self, cliente, almacen, descargas):
+        _sesion(cliente, USUARIO)
+        r = cliente.put("/api/comandas/NOEXISTE?fecha=2026-10-07",
+                        json=_cuerpo(comanda=None))
+        assert r.status_code == 404
+
+    def test_fecha_ajena_es_404(self, cliente, almacen, descargas):
+        """La comanda existe, pero en otra fecha: no se modifica."""
+        _sesion(cliente, USUARIO)
+        r = cliente.put("/api/comandas/OCT001?fecha=2026-10-06",
+                        json=_cuerpo(comanda=None))
+        assert r.status_code == 404
+
+    def test_falta_la_fecha_es_400(self, cliente, almacen, descargas):
+        _sesion(cliente, USUARIO)
+        r = cliente.put("/api/comandas/OCT001", json=_cuerpo(comanda=None))
+        assert r.status_code == 400
+        assert "fecha" in r.json()["detail"].lower()
+
+    def test_cambiar_el_folio_es_400(self, cliente, almacen, descargas):
+        """El folio es llave: para "cambiarlo" hay que borrar y crear."""
+        _sesion(cliente, USUARIO)
+        r = cliente.put("/api/comandas/OCT001?fecha=2026-10-07",
+                        json=_cuerpo(comanda="OTRO1"))
+        assert r.status_code == 400
+        assert "no se puede cambiar" in r.json()["detail"]
+
+    def test_datos_invalidos_son_400(self, cliente, almacen, descargas):
+        _sesion(cliente, USUARIO)
+        r = cliente.put("/api/comandas/OCT001?fecha=2026-10-07",
+                        json=_cuerpo(comanda=None, tipo="NARANJA"))
+        assert r.status_code == 400
+
+    def test_lector_no_modifica(self, cliente, almacen, descargas):
+        _sesion(cliente, LECTOR)
+        r = cliente.put("/api/comandas/OCT001?fecha=2026-10-07",
+                        json=_cuerpo(comanda=None, pax=8))
+        assert r.status_code == 403
+        assert "modificar comandas" in r.json()["detail"]
+
+
+class TestEliminarComanda:
+    """DELETE /api/comandas/{folio} — borrar una comanda de una fecha."""
+
+    @pytest.fixture(autouse=True)
+    def _datos(self, almacen):
+        almacen.sembrar("erika", "2026-10-07", [
+            _comanda("OCT001"), _comanda("OCT002"),
+        ])
+        almacen.sembrar("jbl", "2026-10-07", [_comanda("OCT001")])
+
+    def test_elimina_la_comanda(self, cliente, almacen, descargas):
+        _sesion(cliente, USUARIO)
+        r = cliente.delete("/api/comandas/OCT001?fecha=2026-10-07")
+        assert r.status_code == 200, r.text
+        assert r.json()["ok"] is True
+
+        lista = cliente.get("/api/comandas/?fecha=2026-10-07").json()
+        assert [c["comanda"] for c in lista["comandas"]] == ["OCT002"]
+
+    def test_al_borrar_la_ultima_la_fecha_desaparece(self, cliente, almacen, descargas):
+        """El frontend vuelve al estado vacio cuando no quedan fechas."""
+        _sesion(cliente, USUARIO)
+        cliente.delete("/api/comandas/OCT001?fecha=2026-10-07")
+        cliente.delete("/api/comandas/OCT002?fecha=2026-10-07")
+        assert cliente.get("/api/comandas/fechas").json()["fechas"] == []
+
+    def test_no_borra_la_de_otro_usuario(self, cliente, almacen, descargas):
+        """Mismo folio, misma fecha, otro dueño: solo se va la propia."""
+        _sesion(cliente, USUARIO)
+        r = cliente.delete("/api/comandas/OCT001?fecha=2026-10-07")
+        assert r.status_code == 200, r.text
+
+        # La de jbl (mismo folio y fecha) sigue ahi.
+        assert any(f["subido_por"] == "jbl" and f["folio"] == "OCT001"
+                   for f in almacen.filas)
+        assert not any(f["subido_por"] == "erika" and f["folio"] == "OCT001"
+                       for f in almacen.filas)
+
+    def test_no_borra_en_una_fecha_que_no_es(self, cliente, almacen, descargas):
+        """Sin la fecha correcta no se encuentra la fila: 404, no un borrado."""
+        _sesion(cliente, USUARIO)
+        r = cliente.delete("/api/comandas/OCT001?fecha=2026-10-06")
+        assert r.status_code == 404
+        assert len(almacen.filas) == 3
+
+    def test_inexistente_es_404(self, cliente, almacen, descargas):
+        _sesion(cliente, USUARIO)
+        assert cliente.delete(
+            "/api/comandas/NOEXISTE?fecha=2026-10-07"
+        ).status_code == 404
+
+    def test_falta_la_fecha_es_400(self, cliente, almacen, descargas):
+        """Un DELETE sin fecha borraria 'la de hoy' sin que nadie lo pidiera."""
+        _sesion(cliente, USUARIO)
+        r = cliente.delete("/api/comandas/OCT001")
+        assert r.status_code == 400
+        assert len(almacen.filas) == 3, "borro algo sin que se pidiera la fecha"
+
+    def test_lector_no_elimina(self, cliente, almacen, descargas):
+        _sesion(cliente, LECTOR)
+        r = cliente.delete("/api/comandas/OCT001?fecha=2026-10-07")
+        assert r.status_code == 403
+        assert "eliminar comandas" in r.json()["detail"]
+        assert len(almacen.filas) == 3
+
+    def test_sin_sesion_es_401(self, cliente, almacen, descargas, monkeypatch):
+        import routers.api_comandas as rc
+        monkeypatch.setattr(rc, "get_current_user", lambda request: None)
+        cliente.cookies.clear()
+        assert cliente.delete(
+            "/api/comandas/OCT001?fecha=2026-10-07"
+        ).status_code == 401
+
+
+class TestEscrituraNoDescuentaCuota:
+    """Crear, modificar y borrar no generan PDF: no gastan descargas."""
+
+    def test_las_tres_operaciones_cuentan_cero(self, cliente, almacen, descargas):
+        descargas["permitido"] = True
+        _sesion(cliente, USUARIO)
+
+        cliente.post("/api/comandas/", json=_cuerpo())
+        cliente.put("/api/comandas/NOV001?fecha=2026-10-07",
+                    json=_cuerpo(comanda=None, pax=4))
+        cliente.delete("/api/comandas/NOV001?fecha=2026-10-07")
+
+        assert descargas["contadas"] == 0
+
+
 # ── Reportes ───────────────────────────────────────────────────
 
 class TestReportes:
@@ -646,6 +993,20 @@ class TestCuotaDeDescargas:
         assert descargas["contadas"] == 0
 
 
+def _dia_hace(dias: int) -> str:
+    """Fecha ISO de hace `dias` dias.
+
+    La serie se pide con `?dias=30`, asi que una fecha fija en el test caduca
+    sola al pasar el tiempo. Calculandola desde hoy, el caso sigue midiendo lo
+    que quiere medir.
+    """
+    from datetime import date, timedelta
+
+    from core.comandas.fecha import hoy_iso
+
+    return (date.fromisoformat(hoy_iso()) - timedelta(days=dias)).isoformat()
+
+
 class TestSerieDeBarcos:
     """GET /api/comandas/serie — la serie diaria por barco del dashboard.
 
@@ -658,10 +1019,10 @@ class TestSerieDeBarcos:
 
     @pytest.fixture(autouse=True)
     def _datos(self, almacen):
-        almacen.sembrar("erika", "2026-10-06", [_comanda("OCT001"), _comanda("OCT002")])
-        almacen.sembrar("erika", "2026-10-05", [_comanda("OCT003")])
-        almacen.sembrar("LuisE", "2026-10-06", [_comanda("OCT004")])
-        almacen.sembrar("PabloDG", "2026-10-04", [_comanda("OCT005")])
+        almacen.sembrar("erika", _dia_hace(2), [_comanda("OCT001"), _comanda("OCT002")])
+        almacen.sembrar("erika", _dia_hace(3), [_comanda("OCT003")])
+        almacen.sembrar("LuisE", _dia_hace(2), [_comanda("OCT004")])
+        almacen.sembrar("PabloDG", _dia_hace(4), [_comanda("OCT005")])
 
     def test_exige_sesion(self, cliente, almacen, descargas):
         import routers.api_comandas as rc
@@ -715,7 +1076,7 @@ class TestSerieDeBarcos:
 
     def test_las_comandas_de_un_usuario_fuera_del_mapa_se_avisan(self, cliente, almacen, descargas):
         _sesion(cliente, USUARIO)
-        almacen.sembrar("admin", "2026-10-06", [_comanda("OCT006")])
+        almacen.sembrar("admin", _dia_hace(2), [_comanda("OCT006")])
         c = cliente.get("/api/comandas/serie?dias=30").json()
         assert c["sin_asignar"] == 1
         assert c["total"] == 6

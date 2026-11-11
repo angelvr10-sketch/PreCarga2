@@ -17,6 +17,12 @@
  *
  * 3. EL USUARIO VIENE DE LA SESION. `useAuth` ya sabe quien es y si es admin;
  *    no hay login aqui.
+ *
+ * 4. ADEMAS DEL PDF, SE PUEDE CAPTURAR A MANO. Crear, modificar y eliminar una
+ *    comanda suelta existe para lo que el reporte no cubre (una comanda por
+ *    telefono, un PAX mal capturado). Solo lo ve quien puede escribir: admin y
+ *    usuario; el lector se queda en consulta, igual que en los reportes en
+ *    bloque. El backend vuelve a comprobarlo y responde 403 si no alcanza.
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -28,7 +34,11 @@ import { useAuth } from '@/hooks/use-auth'
 import {
   elegirFechaInicial,
   esRolLectura,
+  puedeEscribirComandas,
+  useActualizarComanda,
+  useBorrarComanda,
   useComandas,
+  useCrearComanda,
   useDiagnostico,
   useEstadisticas,
   useFechas,
@@ -36,16 +46,22 @@ import {
   useReportesDisponibles,
 } from '@/hooks/use-comandas'
 import { BotonesReporte } from '@/components/comandas/botones-reporte'
+import { ConfirmarEliminarComanda } from '@/components/comandas/confirmar-eliminar'
 import { Dropzone } from '@/components/comandas/dropzone'
+import { FormularioComanda } from '@/components/comandas/formulario-comanda'
 import { Graficas } from '@/components/comandas/graficas'
 import { KpiGrid } from '@/components/comandas/kpi-grid'
 import { TablaComandas } from '@/components/comandas/tabla-comandas'
 import { TablaPax } from '@/components/comandas/tabla-pax'
-import { fechaCorta, fechaLarga, descargarComanda, descargarReporte } from '@/lib/comandas'
+import {
+  fechaCorta, fechaLarga, hoyIso, descargarComanda, descargarReporte,
+} from '@/lib/comandas'
 import { mensajeDescargaError } from '@/lib/solicitudes'
 import { ApiError } from '@/lib/api'
-import type { TipoReporte } from '@/types/comandas'
-import { CalendarDays, Loader2, RefreshCw, ScrollText, ChevronDown } from 'lucide-react'
+import type { Comanda, ComandaEntrada, TipoReporte } from '@/types/comandas'
+import {
+  CalendarDays, Loader2, RefreshCw, ScrollText, ChevronDown, Plus,
+} from 'lucide-react'
 
 export default function Comandas() {
   const { user } = useAuth()
@@ -57,6 +73,8 @@ export default function Comandas() {
   const esLector = esRolLectura(user?.rol ?? '')
   // El diagnostico cuenta datos de TODOS los usuarios: solo admin de verdad.
   const esAdmin = !!user?.admin
+  // Crear/modificar/eliminar: el backend exige admin o usuario.
+  const puedeEditar = puedeEscribirComandas(user?.rol ?? '')
 
   const {
     data: fechas,
@@ -72,6 +90,19 @@ export default function Comandas() {
   const importar = useImportar()
   const diagnostico = useDiagnostico(esAdmin && verDiagnostico)
 
+  /* ── Captura a mano ───────────────────────────────────────── */
+
+  const crear = useCrearComanda()
+  const actualizar = useActualizarComanda()
+  const borrar = useBorrarComanda()
+  const guardando = crear.isPending || actualizar.isPending
+  const borrando = borrar.isPending
+
+  const [dialogoAbierto, setDialogoAbierto] = useState(false)
+  // null = el dialogo esta en modo "crear".
+  const [comandaEnEdicion, setComandaEnEdicion] = useState<Comanda | null>(null)
+  const [comandaAEliminar, setComandaAEliminar] = useState<Comanda | null>(null)
+
   // Al entrar: hoy si hay comandas de hoy, si no la fecha mas reciente.
   const inicial = useMemo(() => elegirFechaInicial(fechas), [fechas])
   useEffect(() => {
@@ -80,6 +111,78 @@ export default function Comandas() {
 
   const comandas = respuesta?.comandas ?? []
   const hayDatos = comandas.length > 0
+
+  /** El mensaje del backend si lo hay; si no, algo que se pueda leer. */
+  function mensajeDeError(e: unknown, porDefecto: string): string {
+    if (e instanceof ApiError) return e.message
+    if (e instanceof Error && e.message) return e.message
+    return porDefecto
+  }
+
+  function abrirCrear() {
+    setComandaEnEdicion(null)
+    setDialogoAbierto(true)
+  }
+
+  function abrirEditar(comanda: Comanda) {
+    setComandaEnEdicion(comanda)
+    setDialogoAbierto(true)
+  }
+
+  /**
+   * Guarda el formulario. Resuelve true si se guardo: el dialogo se cierra y,
+   * si fallo, se queda abierto con lo que la persona ya habia escrito.
+   */
+  async function guardar(entrada: ComandaEntrada): Promise<boolean> {
+    try {
+      if (comandaEnEdicion) {
+        const r = await actualizar.mutateAsync({
+          folio: comandaEnEdicion.comanda,
+          fecha: fecha ?? entrada.fecha ?? hoyIso(),
+          datos: entrada,
+        })
+        notificar('Comanda actualizada', r.mensaje, 'exito')
+      } else {
+        const r = await crear.mutateAsync(entrada)
+        notificar('Comanda creada', r.mensaje, 'exito')
+        // La fecha puede ser nueva: se selecciona para que se vea lo capturado.
+        setFecha(r.fecha)
+      }
+      setDialogoAbierto(false)
+      setComandaEnEdicion(null)
+      return true
+    } catch (e) {
+      notificar(
+        'No se pudo guardar la comanda',
+        mensajeDeError(e, 'Intenta de nuevo.'),
+        'error',
+      )
+      return false
+    }
+  }
+
+  async function eliminar() {
+    if (!comandaAEliminar || !fecha) return
+    try {
+      const r = await borrar.mutateAsync({ folio: comandaAEliminar.comanda, fecha })
+      notificar('Comanda eliminada', r.mensaje, 'exito')
+      setComandaAEliminar(null)
+
+      // Si era la ultima del dia, esa fecha deja de existir en /fechas. Se
+      // vuelve a la que corresponda en vez de dejar el selector apuntando a un
+      // dia que ya no tiene comandas.
+      if (comandas.length <= 1) {
+        const refresco = await recargarFechas()
+        setFecha(elegirFechaInicial(refresco.data))
+      }
+    } catch (e) {
+      notificar(
+        'No se pudo eliminar la comanda',
+        mensajeDeError(e, 'Intenta de nuevo.'),
+        'error',
+      )
+    }
+  }
 
   /* ── Subir reporte ─────────────────────────────────────────── */
 
@@ -206,6 +309,17 @@ export default function Comandas() {
               {fechaLarga(fecha)}
             </span>
           )}
+          {puedeEditar && (
+            <Button
+              size="sm"
+              className="gap-1.5"
+              title="Capturar una comanda que no viene en el reporte"
+              onClick={abrirCrear}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Nueva comanda
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -302,6 +416,12 @@ ${diagnostico.data.error ? `error: ${diagnostico.data.error}` : ''}`}
                 Sube el reporte PDF del día arriba. Las comandas se guardan por fecha
                 y las puedes volver a descargar como PDF.
               </p>
+              {puedeEditar && (
+                <Button variant="outline" size="sm" className="mt-2 gap-1.5" onClick={abrirCrear}>
+                  <Plus className="h-3.5 w-3.5" />
+                  Capturar la primera comanda
+                </Button>
+              )}
             </CardContent>
           </Card>
           {botones}
@@ -309,9 +429,17 @@ ${diagnostico.data.error ? `error: ${diagnostico.data.error}` : ''}`}
       ) : !hayDatos ? (
         <>
           <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground">
-              No hay comandas para el {fecha ? fechaCorta(fecha) : ''}. Sube el
-              reporte de ese día.
+            <CardContent className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
+              <p>
+                No hay comandas para el {fecha ? fechaCorta(fecha) : ''}. Sube el
+                reporte de ese día.
+              </p>
+              {puedeEditar && (
+                <Button variant="outline" size="sm" className="mt-1 gap-1.5" onClick={abrirCrear}>
+                  <Plus className="h-3.5 w-3.5" />
+                  Capturar una comanda
+                </Button>
+              )}
             </CardContent>
           </Card>
           {botones}
@@ -355,6 +483,10 @@ ${diagnostico.data.error ? `error: ${diagnostico.data.error}` : ''}`}
                 fecha={fecha ?? ''}
                 onDescargar={bajarComanda}
                 descargando={descargando}
+                puedeEditar={puedeEditar}
+                onEditar={abrirEditar}
+                onEliminar={setComandaAEliminar}
+                ocupada={guardando || borrando}
               />
             </CardContent>
           </Card>
@@ -367,6 +499,32 @@ ${diagnostico.data.error ? `error: ${diagnostico.data.error}` : ''}`}
           Cargando comandas…
         </p>
       )}
+
+      {/* ── Captura a mano ──────────────────────────────────────
+          Los dialogos viven fuera de las ramas de arriba: abrir el formulario
+          no depende de que la fecha tenga datos (crear la primera comanda de
+          un dia es justamente el caso en que no hay ninguno). */}
+      {puedeEditar && (
+        <FormularioComanda
+          abierto={dialogoAbierto}
+          comanda={comandaEnEdicion}
+          fecha={fecha ?? hoyIso()}
+          guardando={guardando}
+          onCerrar={() => {
+            setDialogoAbierto(false)
+            setComandaEnEdicion(null)
+          }}
+          onGuardar={guardar}
+        />
+      )}
+
+      <ConfirmarEliminarComanda
+        comanda={comandaAEliminar}
+        fecha={fecha ?? ''}
+        borrando={borrando}
+        onCerrar={() => setComandaAEliminar(null)}
+        onConfirmar={eliminar}
+      />
     </div>
   )
 }

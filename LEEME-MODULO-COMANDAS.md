@@ -103,7 +103,38 @@ En este orden, porque cada paso depende del anterior.
 4. Fíjate en el campo **Observaciones**: en la app vieja de Streamlit esto
    *nunca se veía en pantalla*, solo se imprimía en el PDF. Ahora sí.
 
-### c) Los PDF (esto es lo importante)
+### c) Crear, modificar y eliminar una comanda a mano
+
+Existe para lo que el reporte PDF no cubre: una comanda que llegó por teléfono,
+un PAX mal capturado, un folio que sobra. **Escribe en la base real** (bajo el
+usuario con el que entras), igual que la subida de un reporte.
+
+Quién puede: los roles **admin** y **usuario**. El rol **lector** no ve los
+botones y el backend le responde 403 si los llama igual.
+
+1. **Nueva comanda** (arriba a la derecha). Se abre un formulario con fecha,
+   folio, horario, compañía, destino, transporte, tipo, menús y
+   observaciones. Al guardar, el día aparece seleccionado aunque sea nuevo.
+2. **PAX no se captura**: es la suma de **Menú 1 + Menú 2** y el campo sale de
+   solo lectura. Al cambiar cualquier menú, el total se recalcula al momento.
+   El backend aplica la misma regla (`core/comandas/edicion.py`), así que la
+   API tampoco puede guardar un PAX incoherente con los menús. Si no se manda
+   `menu_1`, se copia del `pax` recibido por compatibilidad con clientes
+   antiguos.
+3. Repite el mismo folio el mismo día → **409** "Ya existe la comanda…".
+   *No* se sobrescribe: para eso está el lápiz. (El mismo folio de otro usuario
+   sí se puede: los folios se numeran por destino, no por persona.)
+4. **El lápiz** de una fila abre el mismo formulario con lo que hay guardado.
+   Ahí el folio sale **bloqueado**: es parte de la llave de la fila. Si de
+   verdad hay que renombrarlo, se borra y se crea de nuevo.
+5. **El tacho** pide confirmación con folio, compañía, destino, PAX y fecha.
+6. Cualquier dato fuera de lugar (horario `25:99`, transporte `CAMION`, Menú 1
+   y Menú 2 en cero) responde **400** con el motivo exacto y **no** guarda
+   nada. Esas reglas viven en `core/comandas/edicion.py`; el formulario solo
+   pone las obvias (`required`, números).
+7. Modificar o borrar **no gasta descargas**: no genera PDF.
+
+### d) Los PDF (esto es lo importante)
 
 Cada botón genera el PDF **en ese momento**. Nada se genera al abrir la
 pantalla (la app vieja generaba los cuatro en cada clic, aunque nadie los
@@ -132,7 +163,7 @@ de la app, pero un cambio en la fuente sería lo primero en notarse.
 Cada descarga descuenta una del contador. Con 40 comandas el PDF de "todas" es
 de 40 páginas: no lo abras esperando algo corto.
 
-### d) La cuota de descargas
+### e) La cuota de descargas
 
 Cada PDF que descargas descuenta una del contador del usuario. Para agotar las
 30 gratuitas tendrías que descargar 30 veces.
@@ -153,7 +184,7 @@ y *no* descargarse. Después lo devuelves a 0.
 > responder 402. Es un desperdicio menor de CPU que decidí no optimizar: en Fly
 > con 1 vCPU son ~300 ms por reporte.
 
-### e) La subida de un reporte
+### f) La subida de un reporte
 
 **Esto escribe en la base real.** Si decides probarlo:
 
@@ -168,7 +199,7 @@ Si ves folios duplicados después de subir dos veces el mismo archivo, **para
 inmediatamente**: significaría que el índice único
 `(folio, subido_por, fecha_registro)` no está aplicado.
 
-### f) La PWA
+### g) La PWA
 
 Con `scripts\ver.bat` (modo producción):
 
@@ -236,6 +267,7 @@ subida de prueba:
 ```sql
 -- Borra SOLO lo que subió admin
 DELETE FROM comandas WHERE subido_por = 'admin';
+-- Ojo: esto tambien borra lo que admin capturo a mano en /comandas.
 ```
 
 O más quirúrgico, por fecha:
@@ -274,7 +306,7 @@ Y los tests, que no necesitan nada corriendo:
 .venv\Scripts\python.exe -m pytest
 ```
 
-Deben salir **267 tests verdes**.
+Deben salir **462 tests verdes y 114 saltados**: los saltados necesitan el PDF real de la plataforma en `tests/fixtures/` o la app vieja de Streamlit, que no estan en el repo.
 
 ---
 

@@ -107,6 +107,54 @@ export interface ResultadoImportar {
   mensaje: string
 }
 
+/**
+ * El cuerpo que manda el formulario al crear o modificar una comanda.
+ *
+ * `fecha` solo viaja al CREAR: al modificar va en la URL, porque la fecha y el
+ * folio son la llave de la fila (folio, subido_por, fecha_registro) y no se
+ * mueven. `comanda` (el folio) tampoco se manda al modificar: el backend lo
+ * toma de la URL y rechaza un cuerpo que intente cambiarlo.
+ *
+ * `pax` no se captura en el formulario: es siempre `menu_1 + menu_2`. Se sigue
+ * mandando por compatibilidad con el backend y con clientes antiguos, que lo
+ * usan como valor por defecto de `menu_1` cuando este no viaja. El backend lo
+ * vuelve a derivar de los menús, de modo que el valor que llegue aquí no manda.
+ *
+ * `menu_1` es opcional a proposito: si no viene, el backend lo copia de `pax`,
+ * que es el invariante del parser. El formulario manda siempre los dos menús.
+ */
+export interface ComandaEntrada {
+  fecha?: string
+  comanda?: string
+  horario: string
+  compania: string
+  destino: string
+  pax: number
+  transporte: string
+  menu_1?: number
+  menu_2: number
+  tipo: TipoComanda
+  observaciones: string
+}
+
+/** Respuesta de POST y PUT de una comanda. */
+export interface ResultadoComanda {
+  ok: boolean
+  fecha: string
+  comanda: Comanda
+  /** Texto listo para el toast. */
+  mensaje: string
+}
+
+/** Respuesta de DELETE de una comanda. */
+export interface ResultadoBorradoComanda {
+  ok: boolean
+  fecha: string
+  folio: string
+  mensaje: string
+}
+
+
 /** Los cuatro reportes en bloque mas el PDF individual. */
 export type TipoReporte = 'estadistico' | 'todas' | 'mortera' | 'vales'
 

@@ -47,3 +47,8 @@ tests/fixtures/*.pdf
 
 .pytest_cache/
 .coverage
+
+# Herramientas de prueba local: la BD falsa y su script de arranque, y la
+# cache de Vite. Se regeneran en cada maquina y no forman parte de la app.
+.prueba-local/
+.vite/

@@ -15,10 +15,13 @@
 import { api } from './api'
 import { descargar, type ResultadoDescarga } from './solicitudes'
 import type {
+  ComandaEntrada,
   ComandasDeFecha,
   Diagnostico,
   Estadisticas,
   FechasComandas,
+  ResultadoBorradoComanda,
+  ResultadoComanda,
   ResultadoImportar,
   SerieComandas,
   TipoReporte,
@@ -66,6 +69,39 @@ export const comandasApi = {
     formData.append('file', file)
     return api.upload<ResultadoImportar>('/api/comandas/importar', formData)
   },
+
+  /**
+   * Crea UNA comanda a mano. La fecha va en el cuerpo.
+   *
+   * Chocar con un folio que ya existe es un 409 (`ApiError`), no un 500: el
+   * toast lo muestra tal cual para que se entienda que hay que editar la
+   * comanda en vez de crearla de nuevo.
+   */
+  crear: (datos: ComandaEntrada) =>
+    api.post<ResultadoComanda>('/api/comandas/', datos),
+
+  /**
+   * Modifica una comanda existente.
+   *
+   * El folio y la fecha van en la URL porque son la llave de la fila; el resto
+   * de los campos, en el cuerpo. El folio NO se puede cambiar.
+   */
+  actualizar: (folio: string, fecha: string, datos: ComandaEntrada) =>
+    api.put<ResultadoComanda>(
+      `/api/comandas/${encodeURIComponent(folio)}${qs({ fecha })}`,
+      datos,
+    ),
+
+  /**
+   * Elimina una comanda de una fecha concreta.
+   *
+   * `fecha` es obligatoria en el backend a proposito: un DELETE sin fecha
+   * borraria "la de hoy" sin que nadie lo haya pedido.
+   */
+  borrar: (folio: string, fecha: string) =>
+    api.delete<ResultadoBorradoComanda>(
+      `/api/comandas/${encodeURIComponent(folio)}${qs({ fecha })}`,
+    ),
 
   /** Conteos de la base. Solo responde a admin. */
   diagnostico: () => api.get<Diagnostico>('/api/comandas/diagnostico'),

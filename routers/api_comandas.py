@@ -4,13 +4,16 @@ routers/api_comandas.py — Endpoints JSON de comandas de alimentos.
 Consume la sesion que ya tiene precarga2: entrar a `/comandas` es entrar a
 `/dashboard`, con la misma cookie. No hay login propio.
 
-Diez endpoints, agrupados en tres familias:
+Trece endpoints, agrupados en cuatro familias:
 
-  Lectura    GET  /fechas                  fechas con datos del usuario
-             GET  /                        comandas de una fecha
-             GET  /estadisticas            las agregaciones del dashboard
-  Escritura   POST /importar               sube un reporte PDF
-  Reportes    GET  /reporte/{tipo}[/{folio}]   los cinco PDF
+  Lectura    GET    /fechas                  fechas con datos del usuario
+             GET    /                        comandas de una fecha
+             GET    /estadisticas            las agregaciones del dashboard
+  Escritura  POST   /importar               sube un reporte PDF
+  Edicion    POST   /                        crea una comanda a mano
+             PUT    /{folio}                 modifica una comanda a mano
+             DELETE /{folio}                 elimina una comanda
+  Reportes   GET    /reporte/{tipo}[/{folio}]   los cinco PDF
 
 Tres reglas transversales que se aplican aqui y no en cada endpoint:
 
@@ -24,9 +27,18 @@ Tres reglas transversales que se aplican aqui y no en cada endpoint:
    despues negarse a devolverlas es trabajo tirado. El contador se sube solo
    si el PDF se genero bien y la respuesta sale con status 200.
 
+   Crear, modificar y eliminar NO descuentan cuota: no generan PDF. Tampoco
+   cuentan como "descarga" del usuario que las hace.
+
 3. CPU EN HILOS. reportlab y pypdf son Python puro y bloquean. Con
    `--workers 2`, generar PDF en el event loop deja el servidor entero sin
    responder. Todo lo caro va en `run_in_threadpool`.
+
+Nota sobre las escrituras de la familia "Edicion": todas hablan con la tabla
+`comandas`, que es la MISMA de produccion (los dos proyectos comparten base).
+El aislamiento por usuario lo pone `repository._filtro_usuario`, no el endpoint.
+Las tres exigen `fecha` explicita: crear o borrar "en la fecha de hoy" por
+omision es la clase de comodidad que un dia borra la comanda equivocada.
 """
 from datetime import date, datetime
 
@@ -36,11 +48,13 @@ from starlette.concurrency import run_in_threadpool
 
 from core.auth import contar_descarga, get_current_user, puede_descargar
 from core.comandas import (
+    Comanda,
     ErrorProcesandoPDF,
     calcular_estadisticas,
     hoy_iso,
     parse_pdf,
 )
+from core.comandas.edicion import ErrorComandaInvalida, comanda_desde_payload
 from core.comandas.fecha import fecha_largo_es, fecha_titulo_es
 from core.comandas.pdf import pdf_comandas as _pdf_comandas
 from core.comandas.pdf import (
@@ -50,7 +64,11 @@ from core.comandas.pdf import (
     pdf_vales,
 )
 from core.comandas.repository import (
+    ErrorComandaDuplicada,
     ErrorComandas,
+    actualizar,
+    borrar,
+    crear,
     diagnostico,
     fechas_disponibles,
     listar,
@@ -72,6 +90,13 @@ MAX_BYTES_PDF = 20 * 1024 * 1024
 ROLES_REPORTE_COMPLETO = ("admin", "usuario")
 ROLES_LECTURA = ("admin", "usuario", "lector")
 
+# Quien puede crear, modificar y eliminar comandas a mano. Coincide con quien
+# puede subir un reporte: si un rol puede meter 60 comandas con un PDF, no tiene
+# sentido negarle corregir una. 'lector' queda fuera y es lo unico que lo separa
+# de 'usuario' en esta pantalla.
+ROLES_ESCRITURA = ("admin", "usuario")
+
+
 NOMBRE_TIPO = {
     "estadistico": "Reporte_Estadistico",
     "todas": "Todas_las_Comandas",
@@ -90,13 +115,19 @@ def _usuario(request: Request) -> dict:
     return user
 
 
-def _rol_autorizado(user: dict, permitidos: tuple) -> dict:
-    """El rol del usuario esta en la lista, o 403 con un mensaje util."""
+def _rol_autorizado(user: dict, permitidos: tuple,
+                    accion: str = "generar este reporte") -> dict:
+    """El rol del usuario esta en la lista, o 403 con un mensaje util.
+
+    `accion` entra en el texto del 403 porque no es lo mismo negarse a generar
+    un PDF que negarse a borrar una comanda, y el mensaje se muestra tal cual en
+    el toast del frontend.
+    """
     rol = (user.get("rol") or "").lower()
     if rol not in permitidos:
         raise HTTPException(
             status_code=403,
-            detail=f"Tu rol ({rol or 'sin rol'}) no puede generar este reporte",
+            detail=f"Tu rol ({rol or 'sin rol'}) no puede {accion}",
         )
     return user
 
@@ -331,6 +362,151 @@ async def importar(request: Request, file: UploadFile = File(...)):
 
 def _a_fecha(fecha_iso: str) -> date:
     return datetime.strptime(fecha_iso, "%Y-%m-%d").date()
+
+
+# ── Edicion (captura a mano) ───────────────────────────────────
+#
+# Crear, modificar y eliminar UNA comanda. No es el flujo del PDF: existe para
+# lo que el reporte no cubre —una comanda que llego por telefono, un PAX mal
+# capturado, un folio que hay que borrar—. Escriben en la misma tabla y con el
+# mismo aislamiento por usuario (`repository._filtro_usuario`), asi que una
+# comanda capturada a mano es indistinguible de una que vino en el PDF.
+#
+# Las tres exigen la fecha en la peticion. En lectura, `_fecha()` cae a hoy si
+# no se la mandan; aqui eso seria un DELETE silencioso sobre el dia equivocado.
+
+async def _cuerpo(request: Request) -> dict:
+    """El JSON del cuerpo, o 400. Un body roto es del cliente, no un 500."""
+    try:
+        cuerpo = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="El cuerpo debe ser JSON valido")
+    if not isinstance(cuerpo, dict):
+        raise HTTPException(status_code=400, detail="El cuerpo debe ser un objeto JSON")
+    return cuerpo
+
+
+def _fecha_explicita(fecha: str | None) -> str:
+    """Fecha obligatoria en las escrituras, ya validada como YYYY-MM-DD."""
+    if not fecha:
+        raise HTTPException(
+            status_code=400,
+            detail="Falta la fecha (YYYY-MM-DD): las comandas se guardan por dia",
+        )
+    return _fecha(fecha)
+
+
+def _comanda_validada(cuerpo: dict, folio: str | None = None) -> Comanda:
+    """JSON -> Comanda, o 400 con el motivo concreto.
+
+    La validacion vive en `core/comandas/edicion.py` porque es una funcion pura
+    y se prueba sin levantar el servidor.
+    """
+    try:
+        return comanda_desde_payload(cuerpo, folio)
+    except ErrorComandaInvalida as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/", status_code=201)
+async def crear_comanda(request: Request):
+    """Crea UNA comanda capturada a mano.
+
+    El folio lo escribe la persona: los folios del reporte los numera el
+    cliente, no son correlativos por usuario, asi que no se pueden generar.
+    Si ese folio ya existe en esa fecha se responde 409 y NO se sobrescribe
+    nada; para cambiar una comanda que ya existe esta PUT.
+    """
+    user = _usuario(request)
+    _rol_autorizado(user, ROLES_ESCRITURA, "crear comandas")
+
+    cuerpo = await _cuerpo(request)
+    fecha = _fecha_explicita(str(cuerpo.get("fecha") or "").strip() or None)
+    comanda = _comanda_validada(cuerpo)
+
+    try:
+        await run_in_threadpool(crear, user, fecha, comanda)
+    except ErrorComandaDuplicada as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ErrorComandas as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return {
+        "ok": True,
+        "fecha": fecha,
+        "comanda": comanda.a_dict(),
+        "mensaje": f"Comanda {comanda.comanda} creada del {fecha}",
+    }
+
+
+@router.put("/{folio}")
+async def modificar_comanda(folio: str, request: Request, fecha: str | None = None):
+    """Sobrescribe una comanda existente. El folio no se puede cambiar.
+
+    El folio es parte de la llave (folio, subido_por, fecha_registro): cambiarlo
+    seria mover la fila a otro sitio, y para eso esta borrar y volver a crear.
+    El cuerpo puede traer todos los campos menos el folio.
+    """
+    user = _usuario(request)
+    _rol_autorizado(user, ROLES_ESCRITURA, "modificar comandas")
+
+    f = _fecha_explicita(fecha)
+    cuerpo = await _cuerpo(request)
+    comanda = _comanda_validada(cuerpo, folio)
+
+    try:
+        modificada = await run_in_threadpool(
+            actualizar, user, f, comanda.comanda, comanda
+        )
+    except ErrorComandas as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    if not modificada:
+        # 404 y no 403: no se le dice a un usuario si el folio existe en la base
+        # de otro usuario, igual que en el PDF individual.
+        raise HTTPException(
+            status_code=404,
+            detail=f"No hay comanda {folio} en esa fecha",
+        )
+
+    return {
+        "ok": True,
+        "fecha": f,
+        "comanda": comanda.a_dict(),
+        "mensaje": f"Comanda {comanda.comanda} actualizada",
+    }
+
+
+@router.delete("/{folio}")
+async def eliminar_comanda(folio: str, request: Request, fecha: str | None = None):
+    """Elimina UNA comanda de una fecha concreta.
+
+    Borra exactamente la fila (folio, usuario, fecha). No "limpia la fecha":
+    si se borra la ultima comanda del dia, esa fecha deja de existir en
+    `/fechas`, que es lo que el frontend espera para volver al estado vacio.
+    """
+    user = _usuario(request)
+    _rol_autorizado(user, ROLES_ESCRITURA, "eliminar comandas")
+
+    f = _fecha_explicita(fecha)
+
+    try:
+        eliminada = await run_in_threadpool(borrar, user, f, folio)
+    except ErrorComandas as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    if not eliminada:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No hay comanda {folio} en esa fecha",
+        )
+
+    return {
+        "ok": True,
+        "fecha": f,
+        "folio": folio,
+        "mensaje": f"Comanda {folio} eliminada del {f}",
+    }
 
 
 # ── Reportes ───────────────────────────────────────────────────

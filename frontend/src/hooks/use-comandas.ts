@@ -14,7 +14,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { comandasApi, hoyIso } from '@/lib/comandas'
-import type { TipoReporte } from '@/types/comandas'
+import type { ComandaEntrada, TipoReporte } from '@/types/comandas'
 
 /** Fechas con datos del usuario. */
 export function useFechas() {
@@ -83,6 +83,50 @@ export function useDiagnostico(activar: boolean) {
   })
 }
 
+/* ── Escritura de una comanda suelta ───────────────────────────
+ *
+ * Las tres mutaciones invalidan TODA la clave ['comandas']. No es pereza: una
+ * comanda suelta cambia la lista del dia, las estadisticas (por destino, por
+ * compania, por transporte), la serie del dashboard y —al crear en un dia
+ * nuevo o borrar la ultima— la lista de fechas. Invalidar por prefijo es la
+ * unica forma de no olvidarse de ninguna.
+ */
+
+/** Crea una comanda capturada a mano. */
+export function useCrearComanda() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (datos: ComandaEntrada) => comandasApi.crear(datos),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['comandas'] })
+    },
+  })
+}
+
+/** Modifica una comanda existente. El folio no se puede cambiar. */
+export function useActualizarComanda() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { folio: string; fecha: string; datos: ComandaEntrada }) =>
+      comandasApi.actualizar(vars.folio, vars.fecha, vars.datos),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['comandas'] })
+    },
+  })
+}
+
+/** Elimina una comanda de una fecha. */
+export function useBorrarComanda() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { folio: string; fecha: string }) =>
+      comandasApi.borrar(vars.folio, vars.fecha),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['comandas'] })
+    },
+  })
+}
+
 /**
  * Tipos de reporte que el usuario puede generar segun su rol.
  *
@@ -106,6 +150,18 @@ export function useReportesDisponibles(rol: string): TipoReporte[] {
 /** El rol es de lectura, pero puede ver el dashboard y descargar el PDF suelto. */
 export function esRolLectura(rol: string): boolean {
   return (rol || '').toLowerCase() === 'lector'
+}
+
+/**
+ * El rol puede crear, modificar y eliminar comandas.
+ *
+ * Coincide con `ROLES_ESCRITURA` de routers/api_comandas.py. Igual que con los
+ * reportes, el backend sigue siendo la autoridad y responde 403 si el rol no
+ * alcanza; esto solo evita pintar botones que van a fallar.
+ */
+export function puedeEscribirComandas(rol: string): boolean {
+  const normalizado = (rol || '').toLowerCase()
+  return normalizado === 'admin' || normalizado === 'usuario'
 }
 
 /** Fecha a la que se mira al entrar: hoy si hay datos, si no la mas reciente. */
