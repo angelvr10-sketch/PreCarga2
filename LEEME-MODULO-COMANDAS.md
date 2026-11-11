@@ -127,7 +127,8 @@ botones y el backend le responde 403 si los llama igual.
 4. **El lápiz** de una fila abre el mismo formulario con lo que hay guardado.
    Ahí el folio sale **bloqueado**: es parte de la llave de la fila. Si de
    verdad hay que renombrarlo, se borra y se crea de nuevo.
-5. **El tacho** pide confirmación con folio, compañía, destino, PAX y fecha.
+5. **El botón eliminar** pide confirmación con folio, compañía, destino, PAX y
+   fecha.
 6. Cualquier dato fuera de lugar (horario `25:99`, transporte `CAMION`, Menú 1
    y Menú 2 en cero) responde **400** con el motivo exacto y **no** guarda
    nada. Esas reglas viven en `core/comandas/edicion.py`; el formulario solo

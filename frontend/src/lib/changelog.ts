@@ -16,7 +16,7 @@ export const CAMBIOS: Cambio[] = [
     icono: '📝',
     titulo: 'Comandas a mano',
     detalle:
-      'Ya puedes agregar, modificar y eliminar comandas desde la tabla, sin esperar a subir el reporte PDF: el botón Nueva comanda abre el formulario, el lápiz corrige una fila y el tacho la borra pidiendo confirmación. El PAX ya no se captura a mano: se calcula solo como Menú 1 + Menú 2, y la API aplica la misma regla para que no se puedan guardar totales incoherentes.',
+      'Ya puedes agregar, modificar y eliminar comandas desde la tabla, sin esperar a subir el reporte PDF: el botón Nueva comanda abre el formulario, el lápiz corrige una fila y el botón eliminar la borra pidiendo confirmación. El PAX ya no se captura a mano: se calcula solo como Menú 1 + Menú 2, y la API aplica la misma regla para que no se puedan guardar totales incoherentes.',
   },
   {
     icono: '🍱',

@@ -1,7 +1,7 @@
 /**
  * Confirmación de borrado de UNA comanda.
  *
- * No se borra al clic en el tacho: la tabla abre el detalle al hacer clic en
+ * No se borra al clic en el botón eliminar: la tabla abre el detalle al hacer clic en
  * cualquier parte de la fila, así que un borrado directo sería demasiado fácil
  * de disparar sin querer. El diálogo dice exactamente qué se va a borrar
  * (folio, compañía, destino, PAX y fecha) para que la persona lo reconozca.
