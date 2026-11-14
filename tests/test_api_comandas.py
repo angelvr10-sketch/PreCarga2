@@ -992,6 +992,22 @@ class TestCuotaDeDescargas:
         assert r.status_code == 404
         assert descargas["contadas"] == 0
 
+    def test_si_la_generacion_falla_no_descuenta(self, cliente, almacen, descargas, monkeypatch):
+        """Solo se cobra el PDF que se entrega: un error de reportlab no cuesta cuota."""
+        import routers.api_comandas as rc
+
+        def _falla(*args, **kwargs):
+            raise RuntimeError("reportlab fallo")
+
+        monkeypatch.setattr(rc, "pdf_vales", _falla)
+        descargas["permitido"] = True
+        _sesion(cliente, ADMIN)
+
+        with pytest.raises(RuntimeError):
+            cliente.get("/api/comandas/reporte/vales?fecha=2026-10-07")
+
+        assert descargas["contadas"] == 0
+
 
 def _dia_hace(dias: int) -> str:
     """Fecha ISO de hace `dias` dias.

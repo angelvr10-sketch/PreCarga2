@@ -413,6 +413,12 @@ async def admin_usuarios_update(uid: str, request: Request):
         # "verificado" devolvia 400 de PostgREST.
         update_data["email_verificado"] = bool(body["verificado"])
 
+    if body.get("reiniciar_descargas") is True:
+        # Devolver la cuota gratuita sin tocar la suscripcion. Sirve cuando
+        # alguien agoto las 30 descargas de prueba y hay que desbloquearlo sin
+        # entrar al SQL Editor de Supabase.
+        update_data["descargas_usadas"] = 0
+
     if body.get("password") is not None:
         password = str(body["password"])
         if len(password) < 6:

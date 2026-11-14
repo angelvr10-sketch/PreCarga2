@@ -548,10 +548,13 @@ async def reporte_comanda(request: Request, folio: str, fecha: str | None = None
         # de otro usuario.
         raise HTTPException(status_code=404, detail=f"No hay comanda {folio} en esa fecha")
 
-    await _cobrar_descarga(user, f"Necesitas una descarga para ver {folio}")
+    _verificar_cuota(user, f"Necesitas una descarga para ver {folio}")
 
     fecha_texto, titulo = await run_in_threadpool(_contexto_de_fecha, user, f)
     datos = await run_in_threadpool(pdf_comanda, comanda, fecha_texto, titulo)
+    # Se cuenta DESPUES de generar: si reportlab falla, el usuario no pierde
+    # una descarga por un PDF que nunca recibio.
+    await run_in_threadpool(contar_descarga, user["id"])
     return _pdf(datos, f"Comanda_{folio}.pdf")
 
 
@@ -586,9 +589,13 @@ async def _generar_pdf(request: Request, fecha: str | None, tipo: str):
 
     # La cuota se comprueba ANTES de generar: son 30 paginas de reportlab que
     # se harian para nada si despues va a decir que no.
-    await _cobrar_descarga(user, "Te quedaste sin descargas para generar el reporte")
+    _verificar_cuota(user, "Te quedaste sin descargas para generar el reporte")
 
     datos = await run_in_threadpool(_generar)
+    # La cuenta se sube solo cuando el PDF ya se genero bien. Antes se
+    # descontaba antes de reportlab y un error de generacion le costaba una
+    # descarga al usuario sin entregarle nada.
+    await run_in_threadpool(contar_descarga, user["id"])
     nombre = f"{NOMBRE_TIPO[tipo]}_{_titulo_legible(titulo)}.pdf"
     return _pdf(datos, nombre)
 
@@ -603,11 +610,13 @@ def _contexto_de_fecha(usuario: dict, fecha_iso: str) -> tuple[str, str]:
     return fecha_largo_es(f), _titulo_de_la_base(usuario, fecha_iso)
 
 
-async def _cobrar_descarga(user: dict, mensaje_si_no: str) -> None:
-    """Comprueba la cuota y, si hay, descuenta una descarga.
+def _verificar_cuota(user: dict, mensaje_si_no: str) -> None:
+    """Comprueba la cuota SIN descontarla todavia.
 
     Decision D3 (2026-10-06): los PDF de comandas cuentan para
-    `descargas_usadas`, igual que los de precarga2.
+    `descargas_usadas`, igual que los de precarga2. El descuento lo hace el
+    endpoint con `contar_descarga` despues de generar el PDF, para no cobrar
+    una descarga que termino en error.
 
     Nota sobre `contar_descarga`: lee el contador y luego lo incrementa con dos
     peticiones separadas, asi que dos descargas simultaneas pueden perder una
@@ -618,7 +627,6 @@ async def _cobrar_descarga(user: dict, mensaje_si_no: str) -> None:
     permitido, razon = puede_descargar(user)
     if not permitido:
         raise HTTPException(status_code=402, detail=mensaje_si_no or razon)
-    contar_descarga(user["id"])
 
 
 # ── Soporte ────────────────────────────────────────────────────

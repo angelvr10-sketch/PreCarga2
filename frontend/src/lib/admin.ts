@@ -24,6 +24,8 @@ export interface ActualizarUsuarioPayload {
   verificado?: boolean
   password?: string
   dias?: number
+  /** Devuelve el contador de descargas gratuitas a cero. */
+  reiniciar_descargas?: boolean
 }
 
 export const adminApi = {

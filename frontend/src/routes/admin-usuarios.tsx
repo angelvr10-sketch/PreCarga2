@@ -38,6 +38,7 @@ import {
   Power,
   PowerOff,
   Plus,
+  RotateCcw,
   Search,
   Shield,
   Trash2,
@@ -185,6 +186,24 @@ export default function AdminUsuarios() {
     )
   }
 
+  /**
+   * Devuelve las 30 descargas gratuitas. No toca la suscripcion: es para el
+   * caso de alguien que las agoto y no tiene plan, como erika.
+   */
+  const reiniciarDescargas = (usuario: AdminUser) => {
+    actualizarMutation.mutate(
+      { id: usuario.id, data: { reiniciar_descargas: true } },
+      {
+        onSuccess: () =>
+          notificar(
+            'Descargas reiniciadas',
+            `${usuario.nombre} vuelve a tener 30 descargas gratuitas.`,
+            'exito',
+          ),
+      },
+    )
+  }
+
   const filtrados = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
     return usuarios.filter((u) => {
@@ -286,12 +305,39 @@ export default function AdminUsuarios() {
         },
         cell: ({ row }) => {
           const dias = diasRestantes(row.original.expira)
-          if (dias === null) return <span className="text-xs text-muted-foreground">Sin suscripción</span>
+          const usadas = row.original.descargas_usadas ?? 0
+          if (dias === null) {
+            return (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-xs text-muted-foreground">Sin suscripción</span>
+                <span
+                  className={cn(
+                    'text-[11px]',
+                    usadas >= 30 ? 'font-medium text-destructive' : 'text-muted-foreground',
+                  )}
+                  title="Descargas gratuitas usadas de 30"
+                >
+                  {usadas} / 30 descargas
+                </span>
+              </div>
+            )
+          }
           if (dias < 0) {
             return (
-              <Badge variant="destructive" title={`Venció el ${formatFecha(row.original.expira)}`}>
-                Vencida
-              </Badge>
+              <div className="flex flex-col gap-0.5">
+                <Badge variant="destructive" title={`Venció el ${formatFecha(row.original.expira)}`}>
+                  Vencida
+                </Badge>
+                <span
+                  className={cn(
+                    'text-[11px]',
+                    usadas >= 30 ? 'font-medium text-destructive' : 'text-muted-foreground',
+                  )}
+                  title="Descargas gratuitas usadas de 30"
+                >
+                  {usadas} / 30 descargas
+                </span>
+              </div>
             )
           }
           return (
@@ -352,6 +398,15 @@ export default function AdminUsuarios() {
                 }}
               >
                 <KeyRound className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                title={`Reiniciar descargas (${u.descargas_usadas ?? 0} usadas)`}
+                disabled={ocupado}
+                onClick={() => reiniciarDescargas(u)}
+              >
+                <RotateCcw className="h-4 w-4" />
               </Button>
               <Button
                 variant="ghost"

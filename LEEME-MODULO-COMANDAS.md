@@ -169,7 +169,18 @@ de 40 páginas: no lo abras esperando algo corto.
 Cada PDF que descargas descuenta una del contador del usuario. Para agotar las
 30 gratuitas tendrías que descargar 30 veces.
 
-Si quieres verlo funcionar sin gastarte la cuota:
+Si alguien las agotó y no tiene suscripción (el caso de `erika`), se le pueden
+devolver desde **Administración de Usuarios**: busca la cuenta y pulsa el botón
+de **reiniciar descargas** (la flecha circular). Vuelve a dejar el contador en
+cero sin tocar la suscripción y sin entrar a Supabase.
+
+La pantalla de Comandas muestra cuántas descargas gratuitas quedan. Si se
+acaban, los botones siguen activos a propósito: el backend es quien decide y
+responde 402 con el motivo real, que ahora se muestra tal cual en el aviso. Así
+una cuota desactualizada en el navegador no bloquea a alguien que sí puede
+descargar.
+
+Para simularlo sin gastar la cuota:
 
 ```sql
 -- En el SQL Editor de Supabase
@@ -178,12 +189,12 @@ SET descargas_usadas = 30
 WHERE username = 'erika';
 ```
 
-Con eso, el siguiente PDF debe responder **"No tenés descargas disponibles"**
-y *no* descargarse. Después lo devuelves a 0.
+Con eso, el siguiente PDF debe responder **"Te quedaste sin descargas para
+generar el reporte"** y *no* descargarse. Después lo devuelves a 0 (o usas el
+botón de reiniciar descargas).
 
-> Ojo: al agotarse, el botón igual genera el PDF en el servidor antes de
-> responder 402. Es un desperdicio menor de CPU que decidí no optimizar: en Fly
-> con 1 vCPU son ~300 ms por reporte.
+> La cuota se comprueba antes de generar, pero se descuenta solo cuando el PDF
+> ya se generó bien: un error de reportlab no le cuesta una descarga al usuario.
 
 ### f) La subida de un reporte
 
@@ -278,7 +289,8 @@ DELETE FROM comandas
 WHERE subido_por = 'admin' AND fecha_registro = '2026-07-03';
 ```
 
-Y para devolver la cuota:
+Y para devolver la cuota (o usar el botón de reiniciar descargas en
+Administración de Usuarios):
 
 ```sql
 UPDATE usuarios SET descargas_usadas = 0 WHERE username = 'erika';

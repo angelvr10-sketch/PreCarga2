@@ -29,8 +29,35 @@ import type { Solicitud, DashboardStats, ProgramacionDias, ProgramacionArea } fr
  */
 const TIPOS_ARCHIVO = /spreadsheet|excel|octet-stream|text\/csv|text\/plain|application\/pdf/
 
-export type MotivoFallo = 'sin-sesion' | 'sin-permiso' | 'sin-archivo' | 'error'
-export type ResultadoDescarga = { ok: true } | { ok: false; motivo: MotivoFallo }
+export type MotivoFallo =
+  | 'sin-sesion'
+  | 'sin-cuota'
+  | 'sin-permiso'
+  | 'sin-archivo'
+  | 'error'
+
+/**
+ * `mensaje` es el texto que mando el backend (FastAPI lo pone en `detail`).
+ *
+ * Sin el, un 402 por cuota agotada y un 404 por "no hay datos" se veian igual:
+ * "El archivo ya no esta disponible". Eso mandaba a buscar el problema al
+ * lugar equivocado. El motivo sigue existiendo para los callers que quieran
+ * decidir por tipo de fallo; el mensaje es para mostrarlo tal cual.
+ */
+export type ResultadoDescarga =
+  | { ok: true }
+  | { ok: false; motivo: MotivoFallo; mensaje?: string }
+
+/** Saca el mensaje legible de un cuerpo de error de la API. */
+function detalleDelError(cuerpo: unknown): string | undefined {
+  if (!cuerpo || typeof cuerpo !== 'object') return undefined
+  const obj = cuerpo as Record<string, unknown>
+  for (const clave of ['detail', 'mensaje', 'error']) {
+    const valor = obj[clave]
+    if (typeof valor === 'string' && valor.trim()) return valor.trim()
+  }
+  return undefined
+}
 
 /**
  * Descarga una URL de la API sin abrir ventana ni cambiar de pagina.
@@ -44,22 +71,44 @@ export async function descargar(url: string, nombre?: string): Promise<Resultado
     const res = await fetch(url, { credentials: 'include' })
 
     const contentDisposition = res.headers.get('content-disposition') ?? ''
+    const contentType = res.headers.get('content-type') ?? ''
     // El 303 seguido por fetch deja res.redirected en true y la URL final ya
     // es /login o /checkout. El content-type pasa a ser text/html, que es lo
     // que delata que lo que bajo no es el archivo.
-    const redirigido = res.redirected || /text\/html/i.test(res.headers.get('content-type') ?? '')
-    const tipoOk = TIPOS_ARCHIVO.test(res.headers.get('content-type') ?? '')
+    const redirigido = res.redirected || /text\/html/i.test(contentType)
+    const tipoOk = TIPOS_ARCHIVO.test(contentType)
+    const destino = redirigido
+      ? new URL(res.url, window.location.origin).pathname
+      : ''
 
-    if (redirigido || !tipoOk || !res.ok) {
-      if (redirigido) {
-        // /checkout = sin descargas; /login = sesion caducada. No es lo mismo
-        // y el mensaje tiene que distinguishos.
-        const destino = new URL(res.url, window.location.origin).pathname
-        return { ok: false, motivo: destino.startsWith('/login') ? 'sin-sesion' : 'sin-permiso' }
+    // Redirecciones conocidas. Se miran por destino, no por "hubo un 303":
+    // un proxy puede redirigir por otra razon y no queremos llamarlo cuota.
+    if (destino.startsWith('/login')) return { ok: false, motivo: 'sin-sesion' }
+    if (destino.startsWith('/checkout')) return { ok: false, motivo: 'sin-cuota' }
+
+    if (!res.ok) {
+      // FastAPI responde JSON con el motivo real (402 sin cuota, 403 rol,
+      // 404 sin datos...). Antes se descartaba y todo caia en "sin-archivo".
+      let mensaje: string | undefined
+      try {
+        mensaje = detalleDelError(await res.json())
+      } catch {
+        // 502/504 de un proxy no traen JSON: se queda el mensaje generico.
       }
-      if (!res.ok) return { ok: false, motivo: 'sin-archivo' }
-      return { ok: false, motivo: 'error' }
+      const motivo: MotivoFallo =
+        res.status === 401
+          ? 'sin-sesion'
+          : res.status === 402
+            ? 'sin-cuota'
+            : res.status === 403
+              ? 'sin-permiso'
+              : res.status === 404
+                ? 'sin-archivo'
+                : 'error'
+      return { ok: false, motivo, mensaje }
     }
+
+    if (!tipoOk) return { ok: false, motivo: 'error' }
 
     // Nombre sugerido por el servidor, por si el que paso el caller no viene.
     let sugerido = nombre
@@ -101,12 +150,17 @@ export function descargarLog(): Promise<ResultadoDescarga> {
 }
 
 /** Mensaje para mostrar al usuario segun el motivo del fallo. */
-export function mensajeDescargaError(motivo: MotivoFallo): string {
+export function mensajeDescargaError(motivo: MotivoFallo, mensaje?: string): string {
+  // El backend sabe mas que nosotros: si mando un texto, ese manda.
+  if (mensaje && mensaje.trim()) return mensaje.trim()
+
   switch (motivo) {
     case 'sin-sesion':
       return 'Tu sesión expiró. Vuelve a iniciar sesión para descargar.'
-    case 'sin-permiso':
+    case 'sin-cuota':
       return 'No tenés descargas disponibles. Activa tu plan para seguir descargando.'
+    case 'sin-permiso':
+      return 'Tu rol no tiene permiso para descargar este archivo.'
     case 'sin-archivo':
       return 'El archivo ya no está disponible. Generá la solicitud de nuevo.'
     default:

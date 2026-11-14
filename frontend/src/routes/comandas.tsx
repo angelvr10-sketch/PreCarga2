@@ -25,6 +25,7 @@
  *    bloque. El backend vuelve a comprobarlo y responde 403 si no alcanza.
  */
 import { useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import {
   Card, CardContent, CardHeader, CardTitle,
@@ -65,6 +66,7 @@ import {
 
 export default function Comandas() {
   const { user } = useAuth()
+  const qc = useQueryClient()
 
   // El rol crudo, no `!admin`. Con solo el booleano, una usuaria con rol
   // 'usuario' (que NO es lector) se contabilizaba como lector y le salia un
@@ -75,6 +77,18 @@ export default function Comandas() {
   const esAdmin = !!user?.admin
   // Crear/modificar/eliminar: el backend exige admin o usuario.
   const puedeEditar = puedeEscribirComandas(user?.rol ?? '')
+
+  // Cuota gratuita. Con suscripción vigente no hay límite que mostrar; si el
+  // backend viejo no manda los campos, se asume que hay cuota (no se bloquea
+  // por algo que no sabemos).
+  const totalGratis = user?.descargas_gratis_total ?? 30
+  const restantes = user?.suscripcion_vigente
+    ? undefined
+    : user?.descargas_gratis_restantes
+      ?? Math.max(0, totalGratis - (user?.descargas_usadas ?? 0))
+  const cuota = !user || restantes === undefined
+    ? null
+    : { usadas: totalGratis - restantes, total: totalGratis, restantes }
 
   const {
     data: fechas,
@@ -226,7 +240,12 @@ export default function Comandas() {
     try {
       const r = await descargarReporte(tipo, fecha)
       if (!r.ok) {
-        notificar('No se pudo descargar', mensajeDescargaError(r.motivo), 'error')
+        notificar('No se pudo descargar', mensajeDescargaError(r.motivo, r.mensaje), 'error')
+      } else {
+        // El contador de descargas vive en /api/auth/me. Refrescarlo hace que
+        // la cuota que se ve en pantalla (y el bloqueo al llegar a cero) no se
+        // quede con el valor de hace cinco minutos.
+        void qc.invalidateQueries({ queryKey: ['auth', 'me'] })
       }
       return r.ok
     } finally {
@@ -240,7 +259,9 @@ export default function Comandas() {
     try {
       const r = await descargarComanda(folio, fecha)
       if (!r.ok) {
-        notificar('No se pudo descargar', mensajeDescargaError(r.motivo), 'error')
+        notificar('No se pudo descargar', mensajeDescargaError(r.motivo, r.mensaje), 'error')
+      } else {
+        void qc.invalidateQueries({ queryKey: ['auth', 'me'] })
       }
       return r.ok
     } finally {
@@ -278,6 +299,7 @@ export default function Comandas() {
       tipos={tiposDisponibles}
       onDescargar={bajar}
       disabled={!hayDatos || !fecha}
+      cuota={cuota}
       motivoDeshabilitado={
         !fecha || sinFechas
           ? 'Todavía no hay comandas guardadas. Sube un reporte para poder generar los PDF.'

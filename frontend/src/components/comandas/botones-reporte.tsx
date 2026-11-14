@@ -23,6 +23,11 @@ interface Props {
   disabled: boolean
   /** Por que estan deshabilitados. Sin esto, los botones se ven pero nadie sabe por que. */
   motivoDeshabilitado?: string
+  /**
+   * Cuota gratuita del usuario. `null` u omitido cuando tiene suscripcion
+   * vigente: en ese caso no hay limite que mostrar.
+   */
+  cuota?: { usadas: number; total: number; restantes: number } | null
 }
 
 const DEFINICION: Record<TipoReporte, { etiqueta: string; icono: LucideIcon; ayuda: string }> = {
@@ -51,7 +56,13 @@ const DEFINICION: Record<TipoReporte, { etiqueta: string; icono: LucideIcon; ayu
 /** El orden en que salen, igual que en la app de Streamlit. */
 const ORDEN: TipoReporte[] = ['estadistico', 'todas', 'mortera', 'vales']
 
-export function BotonesReporte({ tipos, onDescargar, disabled, motivoDeshabilitado }: Props) {
+export function BotonesReporte({
+  tipos,
+  onDescargar,
+  disabled,
+  motivoDeshabilitado,
+  cuota,
+}: Props) {
   const [descargando, setDescargando] = useState<TipoReporte | null>(null)
 
   async function manejar(tipo: TipoReporte) {
@@ -121,6 +132,20 @@ export function BotonesReporte({ tipos, onDescargar, disabled, motivoDeshabilita
           Cada descarga cuenta como una descarga de tu plan, igual que el resto de la
           aplicación. Se genera el PDF al pedirlo, no al abrir la pantalla.
         </p>
+
+        {cuota && (
+          <p
+            className={
+              cuota.restantes <= 0
+                ? 'flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-700 dark:text-amber-400'
+                : 'text-[11px] leading-relaxed text-muted-foreground'
+            }
+          >
+            {cuota.restantes <= 0
+              ? 'No te quedan descargas gratuitas. Activa un plan para poder generar más reportes.'
+              : `Te quedan ${cuota.restantes} de ${cuota.total} descargas gratuitas.`}
+          </p>
+        )}
       </CardContent>
     </Card>
   )
